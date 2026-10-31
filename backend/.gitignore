@@ -1,0 +1,13 @@
+# Secretos: nunca se versionan
+.env
+.env.*
+!.env.example
+
+# Dependencias
+node_modules/
+
+# Logs y temporales
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
