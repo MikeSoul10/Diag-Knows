@@ -40,12 +40,7 @@ function comoDTO(fila) {
   };
 }
 
-export async function guardarSintoma({
-  pacienteId,
-  descripcion,
-  nivelGravedad,
-  reportadoEn,
-} = {}) {
+export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
   const texto = typeof descripcion === 'string' ? descripcion.trim() : '';

@@ -19,8 +19,8 @@
 ## Tareas técnicas
 
 - [ ] Crear el bot de desarrollo con @BotFather y guardar el token en `.env`.
-- [ ] Elegir modo de conexión: *long polling* en desarrollo, *webhook* para despliegue.
-- [ ] Script `db/seed.sql` con datos de prueba (enfermedades del catálogo).
+- [x] Elegir modo de conexión: *long polling* en desarrollo, *webhook* para despliegue.
+- [x] Script `db/seed.sql` con datos de prueba (enfermedades del catálogo).
 - [ ] Configurar el tablero (GitHub Projects / Trello) con columnas: Backlog · To Do · In Progress · Review · Done.
 
 ## Calendario

@@ -17,7 +17,7 @@
  * nunca rompe el parseo de Telegram. El canal aplica HTML solo a sus textos fijos.
  */
 
-import { patients, consentimiento, enfermedades } from '../repositories/index.js';
+import { patients, consentimiento, enfermedades, transaccion } from '../repositories/index.js';
 import * as sesiones from './session.store.js';
 
 export const VERSION_PRIVACIDAD = 'v1.0';
@@ -125,7 +125,7 @@ function siguientePaso(datos) {
 }
 
 async function preguntaDe(sesion) {
-  const { paso, datos } = sesion;
+  const { paso } = sesion;
 
   if (paso === PASOS.ALIAS) {
     return {
@@ -332,15 +332,18 @@ export async function confirmarRegistro(telegramChatId) {
     };
   }
 
-  const actualizado = await patients.updatePerfil(paciente.id, {
-    alias: sesion.datos.alias,
-    anioNacimiento: sesion.datos.anioNacimiento,
-  });
-
-  await enfermedades.asignar({
-    pacienteId: paciente.id,
-    enfermedadId: sesion.datos.enfermedadId,
-    diagnosticadaEn: null,
+  // Perfil y enfermedad se guardan juntos o no se guarda nada.
+  const actualizado = await transaccion(async () => {
+    const perfil = await patients.updatePerfil(paciente.id, {
+      alias: sesion.datos.alias,
+      anioNacimiento: sesion.datos.anioNacimiento,
+    });
+    await enfermedades.asignar({
+      pacienteId: paciente.id,
+      enfermedadId: sesion.datos.enfermedadId,
+      diagnosticadaEn: null,
+    });
+    return perfil;
   });
 
   sesiones.borrar(chatId);

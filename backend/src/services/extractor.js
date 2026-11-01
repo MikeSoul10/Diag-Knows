@@ -192,7 +192,13 @@ function medicionesDe(texto) {
 const SINTOMAS = [
   {
     nombre: 'dolor de cabeza',
-    patrones: [/\bdolor de cabeza\b/, /\bme duele la cabeza\b/, /\bcabeza\b/, /\bjaqueca\b/, /\bmigrana\b/],
+    patrones: [
+      /\bdolor de cabeza\b/,
+      /\bme duele la cabeza\b/,
+      /\bcabeza\b/,
+      /\bjaqueca\b/,
+      /\bmigrana\b/,
+    ],
   },
   {
     nombre: 'mareo',
@@ -200,7 +206,13 @@ const SINTOMAS = [
   },
   {
     nombre: 'cansancio',
-    patrones: [/\bcansancio\b/, /\bcansad[oa]\b/, /\bfatiga\b/, /\bsin energia\b/, /\bagotad[oa]\b/],
+    patrones: [
+      /\bcansancio\b/,
+      /\bcansad[oa]\b/,
+      /\bfatiga\b/,
+      /\bsin energia\b/,
+      /\bagotad[oa]\b/,
+    ],
   },
   {
     nombre: 'falta de aire',
@@ -232,7 +244,8 @@ const SEVERIDADES = [
   { valor: 2, patron: /\b(?:moderado|moderada|regular)\b/ },
   {
     valor: 3,
-    patron: /\b(?:mucho|mucha|fuerte|fuertes|intenso|intensa|insoportable|grave|severo|severa|terrible)\b/,
+    patron:
+      /\b(?:mucho|mucha|fuerte|fuertes|intenso|intensa|insoportable|grave|severo|severa|terrible)\b/,
   },
 ];
 

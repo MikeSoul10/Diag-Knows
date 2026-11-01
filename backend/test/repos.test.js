@@ -7,8 +7,8 @@ import {
   medicamentos,
   dosisLogs,
   reiniciarRepositorios,
+  elegir,
 } from '../src/repositories/index.js';
-import * as postgres from '../src/repositories/postgres.stubs.js';
 
 // Determinista aunque la máquina tenga DATABASE_URL: estas pruebas son del mock.
 process.env.USE_MOCK_REPOS = 'true';
@@ -118,13 +118,18 @@ describe('sintomas.mock', () => {
 
   test('rechaza una descripción vacía', async () => {
     await assert.rejects(
-      () => sintomas.guardarSintoma({ pacienteId: PACIENTE, descripcion: '  ', nivelGravedad: 'LEVE' }),
+      () =>
+        sintomas.guardarSintoma({ pacienteId: PACIENTE, descripcion: '  ', nivelGravedad: 'LEVE' }),
       /descripcion es obligatoria/
     );
   });
 
   test('lista por paciente', async () => {
-    await sintomas.guardarSintoma({ pacienteId: PACIENTE, descripcion: 'tos', nivelGravedad: 'LEVE' });
+    await sintomas.guardarSintoma({
+      pacienteId: PACIENTE,
+      descripcion: 'tos',
+      nivelGravedad: 'LEVE',
+    });
 
     const lista = await sintomas.listarPorPaciente(PACIENTE);
     assert.equal(lista.length, 1);
@@ -239,7 +244,8 @@ describe('dosisLogs.mock', () => {
 
   test('exige saber si la tomó', async () => {
     await assert.rejects(
-      () => dosisLogs.guardarTomaMedicamento({ pacienteId: PACIENTE, nombreReportado: 'metformina' }),
+      () =>
+        dosisLogs.guardarTomaMedicamento({ pacienteId: PACIENTE, nombreReportado: 'metformina' }),
       /tomada debe ser booleano/
     );
   });
@@ -256,7 +262,11 @@ describe('dosisLogs.mock', () => {
 describe('reiniciarRepositorios', () => {
   test('deja todos los repositorios vacíos', async () => {
     await mediciones.guardarMedicion({ pacienteId: PACIENTE, tipo: 'glucosa', valor: 115 });
-    await sintomas.guardarSintoma({ pacienteId: PACIENTE, descripcion: 'tos', nivelGravedad: 'LEVE' });
+    await sintomas.guardarSintoma({
+      pacienteId: PACIENTE,
+      descripcion: 'tos',
+      nivelGravedad: 'LEVE',
+    });
     await medicamentos.crear({ pacienteId: PACIENTE, nombre: 'Metformina' });
     await dosisLogs.guardarTomaMedicamento({ pacienteId: PACIENTE, tomada: true });
 
@@ -269,32 +279,28 @@ describe('reiniciarRepositorios', () => {
   });
 });
 
-describe('postgres.stubs', () => {
-  test('conservan la firma pero avisan que no están implementados', async () => {
-    await assert.rejects(
-      () => postgres.mediciones.guardarMedicion({ pacienteId: PACIENTE, tipo: 'glucosa', valor: 115 }),
-      /No implementado: mediciones\.guardarMedicion/
-    );
-    await assert.rejects(
-      () => postgres.sintomas.guardarSintoma({ pacienteId: PACIENTE }),
-      /No implementado: sintomas\.guardarSintoma/
-    );
-    await assert.rejects(
-      () => postgres.medicamentos.buscarPorNombre(PACIENTE, 'metformina'),
-      /No implementado: medicamentos\.buscarPorNombre/
-    );
-    await assert.rejects(
-      () => postgres.dosisLogs.guardarTomaMedicamento({ pacienteId: PACIENTE, tomada: true }),
-      /No implementado: dosisLogs\.guardarTomaMedicamento/
-    );
+describe('elegir (fachada mock / PostgreSQL)', () => {
+  const mock = { TIPOS: ['a'], hola: async () => 'mock', __reset: () => 'limpio' };
+  const real = { TIPOS: ['a'], hola: async () => 'real', soloReal: async () => 'real' };
+
+  test('delega al mock o al real según USE_MOCK_REPOS en el momento de la llamada', async () => {
+    const repo = elegir(mock, real);
+    process.env.USE_MOCK_REPOS = 'true';
+    assert.equal(await repo.hola(), 'mock');
+    process.env.USE_MOCK_REPOS = 'false';
+    assert.equal(await repo.hola(), 'real');
   });
 
-  test('__reset es inocuo para que el cambio de implementación no rompa pruebas', () => {
-    assert.doesNotThrow(() => {
-      postgres.mediciones.__reset();
-      postgres.sintomas.__reset();
-      postgres.medicamentos.__reset();
-      postgres.dosisLogs.__reset();
-    });
+  test('copia las constantes y __reset siempre limpia el mock', () => {
+    const repo = elegir(mock, real);
+    assert.deepEqual(repo.TIPOS, ['a']);
+    process.env.USE_MOCK_REPOS = 'false';
+    assert.equal(repo.__reset(), 'limpio');
+  });
+
+  test('avisa si la implementación activa no tiene la función', () => {
+    const repo = elegir(mock, real);
+    process.env.USE_MOCK_REPOS = 'true';
+    assert.throws(() => repo.soloReal(), /no implementa soloReal/);
   });
 });

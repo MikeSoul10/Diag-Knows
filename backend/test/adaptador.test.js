@@ -21,10 +21,7 @@ import {
   MENSAJE_SOLO_TEXTO,
   tecladoConversacion,
 } from '../src/channel/format.js';
-import {
-  TEXTO_ERROR_CONVERSACION,
-  responderConversacion,
-} from '../src/channel/handlers/render.js';
+import { TEXTO_ERROR_CONVERSACION, responderConversacion } from '../src/channel/handlers/render.js';
 import {
   patients,
   consentimiento,
@@ -32,14 +29,16 @@ import {
   reiniciarRepositorios,
 } from '../src/repositories/index.js';
 import * as registration from '../src/services/registration.service.js';
-import { __reset as reiniciarSesiones, existe as haySesion } from '../src/services/session.store.js';
+import {
+  __reset as reiniciarSesiones,
+  existe as haySesion,
+} from '../src/services/session.store.js';
 
 // Determinista: sin Claude y sin PostgreSQL aunque la máquina tenga las llaves.
 process.env.USE_MOCK_AI = 'true';
 process.env.USE_MOCK_REPOS = 'true';
 
 const CHAT = 800001;
-const OTRO_CHAT = 800002;
 
 // ---------------------------------------------------------------------------
 // Dobles de prueba
@@ -262,7 +261,11 @@ describe('formato de las respuestas', () => {
 
     await responderConversacion(
       ctx,
-      { texto: 'Resumen', editarMensaje: true, botones: [[{ texto: 'Ok', callback: 'conv:ok:x' }]] },
+      {
+        texto: 'Resumen',
+        editarMensaje: true,
+        botones: [[{ texto: 'Ok', callback: 'conv:ok:x' }]],
+      },
       { editar: true }
     );
 
@@ -540,7 +543,12 @@ describe('comandos del menú', () => {
     assert.equal(llamadas.reply.length, 1);
     assert.equal(llamadas.reply[0].extra.parse_mode, 'HTML');
     assert.match(llamadas.reply[0].mensaje, /Cómo te sentiste/);
-    assert.equal(llamadas.reply[0].extra.reply_markup.inline_keyboard[0][0].callback_data.startsWith('conv:skip:'), true);
+    assert.equal(
+      llamadas.reply[0].extra.reply_markup.inline_keyboard[0][0].callback_data.startsWith(
+        'conv:skip:'
+      ),
+      true
+    );
   });
 
   test('/cancelar limpia el registro a medias y la conversación', async () => {

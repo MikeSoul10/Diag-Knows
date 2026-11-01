@@ -47,15 +47,13 @@ export function registrarCallbacks(bot, servicio = conversacion) {
   function atenderConversacion(ctx) {
     const datos = parsearCallbackConversacion(ctx.callbackQuery?.data);
 
-    return atenderCallback(
-      ctx,
-      () =>
-        datos
-          ? servicio.procesarCallback({ chatId: ctx.from.id, ...datos })
-          : Promise.resolve({
-              texto: 'Esa opción no la reconozco. Escríbeme lo que quieres registrar.',
-              aviso: 'Opción desconocida',
-            })
+    return atenderCallback(ctx, () =>
+      datos
+        ? servicio.procesarCallback({ chatId: ctx.from.id, ...datos })
+        : Promise.resolve({
+            texto: 'Esa opción no la reconozco. Escríbeme lo que quieres registrar.',
+            aviso: 'Opción desconocida',
+          })
     );
   }
 

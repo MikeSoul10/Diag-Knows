@@ -290,7 +290,10 @@ export function crearServicioConversacion({
       const indice = sintomas.findIndex((previo) => normalizar(previo.descripcion) === clave);
       if (indice >= 0) {
         // Corregir la descripción no borra la intensidad ya dicha.
-        sintomas[indice] = { ...sintoma, severidad: sintoma.severidad ?? sintomas[indice].severidad };
+        sintomas[indice] = {
+          ...sintoma,
+          severidad: sintoma.severidad ?? sintomas[indice].severidad,
+        };
       } else {
         sintomas.push(sintoma);
       }
@@ -451,7 +454,13 @@ export function crearServicioConversacion({
   // Persistencia (solo tras confirmar)
   // -------------------------------------------------------------------------
 
-  async function persistir(pacienteId, borrador) {
+  /** Todo o nada: si el repo ofrece transacciones, el borrador se guarda en una sola. */
+  function persistir(pacienteId, borrador) {
+    const guardar = () => persistirSinTransaccion(pacienteId, borrador);
+    return typeof repos.transaccion === 'function' ? repos.transaccion(guardar) : guardar();
+  }
+
+  async function persistirSinTransaccion(pacienteId, borrador) {
     const cuando = new Date(relojMs()).toISOString();
 
     for (const medicion of borrador.mediciones) {
@@ -524,8 +533,12 @@ export function crearServicioConversacion({
       await persistir(paciente.id, borrador);
     } catch (error) {
       registrarError('guardar el borrador', error);
+      // El guardado es atómico: no quedó nada a medias. Se restaura el borrador
+      // con su token para que el paciente pueda reintentar con el mismo botón.
+      guardarEstado(chatId, estado);
       return {
-        texto: 'No pude guardar el registro en este momento. Escríbeme de nuevo en un rato.',
+        texto:
+          'No pude guardar el registro en este momento. Intenta de nuevo con «Sí, guardar» en un rato.',
         aviso: 'No se pudo guardar',
         editarMensaje: false,
       };
@@ -556,7 +569,8 @@ export function crearServicioConversacion({
     });
 
     return {
-      texto: 'Está bien, no guardé nada. Escríbeme de nuevo lo que quieres registrar y reemplazo lo anterior.',
+      texto:
+        'Está bien, no guardé nada. Escríbeme de nuevo lo que quieres registrar y reemplazo lo anterior.',
       editarMensaje: true,
     };
   }
@@ -567,7 +581,11 @@ export function crearServicioConversacion({
     const { paciente, mensaje } = await contextoPaciente(chatId);
     if (!paciente) return { texto: mensaje, editarMensaje: false };
 
-    const siguiente = { ...estado, estado: SIGUIENTE_PASO[estado.estado], pendienteSeveridad: null };
+    const siguiente = {
+      ...estado,
+      estado: SIGUIENTE_PASO[estado.estado],
+      pendienteSeveridad: null,
+    };
     const respuesta = await continuar(chatId, paciente, siguiente);
     return { ...respuesta, editarMensaje: true };
   }

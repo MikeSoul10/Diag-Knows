@@ -87,8 +87,6 @@ export function tecladoConversacion(botones) {
   if (!Array.isArray(botones) || botones.length === 0) return null;
 
   return Markup.inlineKeyboard(
-    botones.map((fila) =>
-      fila.map((boton) => Markup.button.callback(boton.texto, boton.callback))
-    )
+    botones.map((fila) => fila.map((boton) => Markup.button.callback(boton.texto, boton.callback)))
   );
 }
