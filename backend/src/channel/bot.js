@@ -12,6 +12,9 @@ import { registrarStart } from './handlers/start.js';
 import { registrarMenu } from './handlers/menu.js';
 import { registrarCallbacks } from './handlers/callbacks.js';
 import { registrarMensajes } from './handlers/message.js';
+import { registrarComandoTome } from './handlers/tome.js';
+import { registrarComandoHistorial } from './handlers/historial.js';
+import { registrarComandoBorrado } from './handlers/borrado.js';
 import { conversacion } from './conversacion.instancia.js';
 
 /**
@@ -22,7 +25,10 @@ import { conversacion } from './conversacion.instancia.js';
 export const COMANDOS = Object.freeze([
   { command: 'registrar', description: 'Darte de alta paso a paso' },
   { command: 'reportar', description: 'Contar síntomas, mediciones o tomas' },
+  { command: 'tome', description: 'Registrar que tomaste tu medicamento' },
+  { command: 'historial', description: 'Ver el resumen de tus últimos 7 días' },
   { command: 'perfil', description: 'Ver tus datos guardados' },
+  { command: 'borrar_datos', description: 'Borrar todos mis datos' },
   { command: 'cancelar', description: 'Salir de lo que tengas a medias' },
   { command: 'ayuda', description: 'Ver qué puedo hacer' },
 ]);
@@ -43,24 +49,36 @@ export async function publicarComandos(bot) {
   }
 }
 
+/** Resumen de un error apto para logs: sin mensaje, detail ni payload. */
+export function describirError(error) {
+  const nombre = error?.name ?? 'Error';
+  const codigo = error?.code ?? error?.response?.error_code;
+  return codigo === undefined ? nombre : `${nombre} (${codigo})`;
+}
+
 export function crearBot(servicioConversacion = conversacion) {
   const bot = new Telegraf(obtenerTokenTelegram());
 
   // El orden importa: comandos, luego acciones de botones, al final texto libre.
   registrarStart(bot);
   registrarMenu(bot, servicioConversacion);
+  registrarComandoTome(bot);
+  registrarComandoHistorial(bot);
+  registrarComandoBorrado(bot);
   registrarCallbacks(bot, servicioConversacion);
   registrarMensajes(bot, servicioConversacion);
 
   bot.catch(async (error, ctx) => {
     const updateId = ctx?.update?.update_id ?? 'desconocido';
-    console.error(`Error en update ${updateId}:`, error);
+    // Solo nombre y código: el error completo de pg (detail) o de Telegram
+    // (payload) puede traer datos del paciente.
+    console.error(`Error en update ${updateId}: ${describirError(error)}`);
 
     // Nunca se filtra el detalle técnico al paciente.
     try {
       await ctx?.reply?.('No pude completar eso. Intenta de nuevo en un momento.');
     } catch (errorDeRespuesta) {
-      console.error('Tampoco se pudo avisar al paciente:', errorDeRespuesta);
+      console.error(`Tampoco se pudo avisar al paciente: ${describirError(errorDeRespuesta)}`);
     }
   });
 

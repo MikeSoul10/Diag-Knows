@@ -98,6 +98,15 @@ export async function setEstado(id, estado) {
   return comoDTO(fila);
 }
 
+/** Borra al paciente (`/borrar_datos`, DK-303). Devuelve si existía. */
+export async function eliminar(id) {
+  const fila = porId.get(String(id ?? ''));
+  if (!fila) return false;
+  porId.delete(fila.id);
+  porChatId.delete(String(fila.telegramChatId));
+  return true;
+}
+
 export function __reset() {
   porChatId.clear();
   porId.clear();

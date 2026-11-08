@@ -31,6 +31,9 @@ export const AYUDA = [
   '<b>Qué puedo hacer</b>',
   '',
   '/reportar — contarme síntomas, mediciones o tomas de medicamento',
+  '/tome — registrar que tomaste tu medicamento',
+  '/historial — ver el resumen de tus últimos 7 días',
+  '/borrar_datos — borrar todos tus datos',
   '/registrar — darte de alta paso a paso',
   '/perfil — ver tus datos guardados',
   '/cancelar — salir de lo que tengas a medias',
@@ -87,8 +90,6 @@ export function tecladoConversacion(botones) {
   if (!Array.isArray(botones) || botones.length === 0) return null;
 
   return Markup.inlineKeyboard(
-    botones.map((fila) =>
-      fila.map((boton) => Markup.button.callback(boton.texto, boton.callback))
-    )
+    botones.map((fila) => fila.map((boton) => Markup.button.callback(boton.texto, boton.callback)))
   );
 }

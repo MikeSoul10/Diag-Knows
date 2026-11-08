@@ -78,6 +78,13 @@ function ultimoRegistro(pacienteId) {
   return null;
 }
 
+/** Borra todos los registros del paciente (`/borrar_datos`, DK-303). */
+export async function eliminarPorPaciente(pacienteId) {
+  const antes = registros.length;
+  registros = registros.filter((fila) => String(fila.pacienteId) !== String(pacienteId));
+  return antes - registros.length;
+}
+
 export function __reset() {
   registros = [];
   secuencia = 0;

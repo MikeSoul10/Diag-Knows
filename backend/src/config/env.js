@@ -48,3 +48,31 @@ export function usarIAMock() {
   // Sin llave no hay forma de llamar a Claude: usamos el extractor por regex.
   return !(process.env.ANTHROPIC_API_KEY || '').trim();
 }
+
+export function puertoHttp() {
+  const puerto = Number.parseInt(process.env.PORT || '3000', 10);
+  if (!Number.isInteger(puerto) || puerto < 0 || puerto > 65535) {
+    throw new Error('PORT debe ser un número de puerto válido.');
+  }
+  return puerto;
+}
+
+/**
+ * Datos del webhook (solo TELEGRAM_MODE=webhook). Telegram exige HTTPS y un
+ * secret_token de 1 a 256 caracteres [A-Za-z0-9_-].
+ */
+export function configuracionWebhook() {
+  const dominio = (process.env.WEBHOOK_DOMAIN || '').trim().replace(/\/+$/, '');
+  const secreto = (process.env.WEBHOOK_SECRET || '').trim();
+
+  if (!/^https:\/\/[^/\s]+$/.test(dominio)) {
+    throw new Error('WEBHOOK_DOMAIN debe ser https://tu-dominio (sin ruta) en modo webhook.');
+  }
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(secreto)) {
+    throw new Error(
+      'WEBHOOK_SECRET debe tener de 32 a 256 caracteres [A-Za-z0-9_-]. Genera uno con: ' +
+        `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+    );
+  }
+  return { dominio, secreto };
+}

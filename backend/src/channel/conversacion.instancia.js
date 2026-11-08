@@ -18,6 +18,7 @@ import {
   sintomas,
   medicamentos,
   dosisLogs,
+  transaccion,
 } from '../repositories/index.js';
 import { extraer } from '../services/extractor.js';
 import { anonimizar } from '../services/anonimizador.js';
@@ -54,7 +55,7 @@ export function crearConversacion({
   registrarError,
 } = {}) {
   return crearServicioConversacion({
-    repos: { patients, mediciones, sintomas, medicamentos, dosisLogs },
+    repos: { patients, mediciones, sintomas, medicamentos, dosisLogs, transaccion },
     extractor: { extraer },
     anonimizar,
     validar: validarExtraccion,

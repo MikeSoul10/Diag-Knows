@@ -30,10 +30,7 @@ export function registrarMenu(bot, servicio = conversacion) {
 
     const { paciente, enfermedades } = perfil;
     if (!paciente.alias || !paciente.anioNacimiento) {
-      return ctx.reply(
-        'Todavía no tengo tu registro completo.',
-        tecladoRegistrar()
-      );
+      return ctx.reply('Todavía no tengo tu registro completo.', tecladoRegistrar());
     }
 
     const edad = registration.anioActual() - paciente.anioNacimiento;

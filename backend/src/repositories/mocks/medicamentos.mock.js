@@ -130,6 +130,14 @@ export async function sembrarDatosDesarrollo(pacienteId) {
   return creados;
 }
 
+/** Borra todas las filas del paciente (`/borrar_datos`, DK-303). Devuelve cuántas. */
+export async function eliminarPorPaciente(pacienteId) {
+  const clave = String(pacienteId ?? '');
+  const cantidad = porPaciente.get(clave)?.length ?? 0;
+  porPaciente.delete(clave);
+  return cantidad;
+}
+
 export function __reset() {
   porPaciente.clear();
 }

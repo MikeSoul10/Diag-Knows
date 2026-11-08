@@ -40,12 +40,7 @@ function comoDTO(fila) {
   };
 }
 
-export async function guardarSintoma({
-  pacienteId,
-  descripcion,
-  nivelGravedad,
-  reportadoEn,
-} = {}) {
+export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
   const texto = typeof descripcion === 'string' ? descripcion.trim() : '';
@@ -72,6 +67,24 @@ export async function guardarSintoma({
 export async function listarPorPaciente(pacienteId) {
   const filas = porPaciente.get(validarPacienteId(pacienteId)) ?? [];
   return filas.map(comoDTO);
+}
+
+/** Filas con `reportadoEn` en [desde, hasta), para el historial (DK-301). */
+export async function listarPorRango(pacienteId, desde, hasta) {
+  const inicio = new Date(desde).getTime();
+  const fin = new Date(hasta).getTime();
+  return (await listarPorPaciente(pacienteId)).filter((fila) => {
+    const momento = new Date(fila.reportadoEn).getTime();
+    return momento >= inicio && momento < fin;
+  });
+}
+
+/** Borra todas las filas del paciente (`/borrar_datos`, DK-303). Devuelve cuántas. */
+export async function eliminarPorPaciente(pacienteId) {
+  const clave = String(pacienteId ?? '');
+  const cantidad = porPaciente.get(clave)?.length ?? 0;
+  porPaciente.delete(clave);
+  return cantidad;
 }
 
 export function __reset() {

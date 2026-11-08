@@ -94,6 +94,24 @@ export async function listarPorPaciente(pacienteId) {
   return filas.map(comoDTO);
 }
 
+/** Filas con `medidaEn` en [desde, hasta), para el historial (DK-301). */
+export async function listarPorRango(pacienteId, desde, hasta) {
+  const inicio = new Date(desde).getTime();
+  const fin = new Date(hasta).getTime();
+  return (await listarPorPaciente(pacienteId)).filter((fila) => {
+    const momento = new Date(fila.medidaEn).getTime();
+    return momento >= inicio && momento < fin;
+  });
+}
+
+/** Borra todas las filas del paciente (`/borrar_datos`, DK-303). Devuelve cuántas. */
+export async function eliminarPorPaciente(pacienteId) {
+  const clave = String(pacienteId ?? '');
+  const cantidad = porPaciente.get(clave)?.length ?? 0;
+  porPaciente.delete(clave);
+  return cantidad;
+}
+
 export function __reset() {
   porPaciente.clear();
 }
