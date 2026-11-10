@@ -18,6 +18,7 @@ import {
 import { crearBot, publicarComandos } from './src/channel/bot.js';
 import { crearAppHttp, RUTA_WEBHOOK } from './src/channel/http.js';
 import { estadoSalud } from './src/services/salud.service.js';
+import { iniciarDepuracionPeriodica } from './src/services/retencion.service.js';
 import { cerrarPool } from './src/db/pool.js';
 
 cargarEntorno();
@@ -61,6 +62,9 @@ const servidor = app.listen(puerto, () => {
 // El menú de comandos se publica al arrancar; si falla, el bot sigue funcionando.
 await publicarComandos(bot);
 
+// Borra los mensajes originales con retención vencida (al arrancar y cada 24 h).
+const detenerDepuracion = iniciarDepuracionPeriodica();
+
 if (modo === 'polling') {
   // launch() no resuelve mientras el bot esté corriendo: no se espera.
   bot.launch().catch((err) => {
@@ -81,6 +85,7 @@ async function apagar(senal) {
       // ya estaba detenido
     }
   }
+  detenerDepuracion();
   servidor.close();
   await cerrarPool().catch(() => {});
 }

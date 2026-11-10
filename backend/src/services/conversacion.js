@@ -24,6 +24,9 @@
 
 import { randomBytes } from 'node:crypto';
 
+import { esCritica } from '../config/thresholds.js';
+import { describirMomento, zonaValida } from './fechas.js';
+
 export const ESTADOS = Object.freeze({
   INACTIVO: 'INACTIVO',
   PREGUNTANDO_SINTOMAS: 'PREGUNTANDO_SINTOMAS',
@@ -51,6 +54,11 @@ const ETIQUETA_GRAVEDAD = Object.freeze({ 1: 'leve', 2: 'moderada', 3: 'fuerte' 
 
 export const TTL_MINUTOS = 30;
 const TTL_MS = TTL_MINUTOS * 60 * 1000;
+
+/** Cuántos mensajes anteriores (anonimizados) se dan como contexto al extractor. */
+export const MENSAJES_DE_CONTEXTO = 5;
+
+const ZONA_HORARIA_RESPALDO = 'America/Mexico_City';
 
 // ---------------------------------------------------------------------------
 // Textos fijos (español, breves, sin diagnosticar)
@@ -193,13 +201,15 @@ export function crearAlmacenMemoria() {
  *
  * @param {object} dependencias
  * @param {object} dependencias.repos Repositorios (`patients`, `mediciones`, `sintomas`, `medicamentos`, `dosisLogs`).
- * @param {{ extraer: (texto: string) => Promise<object> }} dependencias.extractor
+ * @param {{ extraer: (texto: string, opciones?: object) => Promise<object> }} dependencias.extractor
+ *   Recibe `{ ahora, zonaHoraria, contexto }` (contexto: mensajes anteriores anonimizados).
  * @param {(texto: string, opciones?: object) => string} dependencias.anonimizar
- * @param {(extraccion: object) => { validos: object, rechazados: Array<object> }} dependencias.validar
+ * @param {(extraccion: object, opciones?: { ahora: Date }) => { validos: object, rechazados: Array<object> }} dependencias.validar
  * @param {{ obtener: Function, guardar: Function, limpiar: Function }} [dependencias.almacenEstado]
  * @param {() => Date} [dependencias.ahora] Reloj inyectable (pruebas de expiración).
  * @param {() => string} [dependencias.generarToken] Token corto para los botones.
  * @param {(contexto: string, error: Error) => void} [dependencias.registrarError] Log sin datos del paciente.
+ * @param {string} [dependencias.zonaHorariaPorDefecto] Si el paciente no tiene zona propia.
  */
 export function crearServicioConversacion({
   repos,
@@ -213,6 +223,7 @@ export function crearServicioConversacion({
     // Nunca se registra el texto del paciente ni valores clínicos.
     console.error(`[conversacion] Falló ${contexto}: ${error?.name ?? 'Error'}`);
   },
+  zonaHorariaPorDefecto = ZONA_HORARIA_RESPALDO,
 } = {}) {
   if (!repos) throw new Error('crearServicioConversacion necesita repos');
   if (!extractor?.extraer) throw new Error('crearServicioConversacion necesita extractor.extraer');
@@ -222,6 +233,38 @@ export function crearServicioConversacion({
   if (typeof validar !== 'function') throw new Error('crearServicioConversacion necesita validar');
 
   const relojMs = () => new Date(ahora()).getTime();
+
+  function zonaDe(paciente) {
+    if (zonaValida(paciente?.zonaHoraria)) return paciente.zonaHoraria;
+    return zonaValida(zonaHorariaPorDefecto) ? zonaHorariaPorDefecto : ZONA_HORARIA_RESPALDO;
+  }
+
+  // -------------------------------------------------------------------------
+  // Contexto: últimos mensajes del chat (anonimizados, solo en memoria)
+  // -------------------------------------------------------------------------
+
+  /** @type {Map<string, Array<{ texto: string, en: number }>>} */
+  const contextos = new Map();
+
+  function vigentesDe(chatId) {
+    return (contextos.get(String(chatId ?? '')) ?? []).filter(({ en }) => relojMs() - en <= TTL_MS);
+  }
+
+  function leerContexto(chatId) {
+    const vigentes = vigentesDe(chatId);
+    if (vigentes.length === 0) contextos.delete(String(chatId ?? ''));
+    return vigentes.map(({ texto }) => texto);
+  }
+
+  function recordarMensaje(chatId, texto) {
+    const previos = vigentesDe(chatId);
+    previos.push({ texto, en: relojMs() });
+    contextos.set(String(chatId ?? ''), previos.slice(-MENSAJES_DE_CONTEXTO));
+  }
+
+  function olvidarContexto(chatId) {
+    contextos.delete(String(chatId ?? ''));
+  }
 
   // -------------------------------------------------------------------------
   // Estado
@@ -353,38 +396,46 @@ export function crearServicioConversacion({
     };
   }
 
-  function lineaMedicacion(toma) {
-    const nombre = toma.nombre ? escapar(capitalizar(toma.nombre)) : 'Medicamento sin nombre';
-    return `• ${nombre}: ${toma.tomada ? 'sí la tomé' : 'no la tomé'}`;
+  /** " · ayer 21:00" si el paciente dijo cuándo pasó (DK-202). */
+  function momentoDe(item, zona) {
+    if (!item.ocurridoEn) return '';
+    return ` · <i>${escapar(describirMomento(item.ocurridoEn, new Date(relojMs()), zona))}</i>`;
   }
 
-  function lineaMedicion(medicion) {
+  function lineaMedicacion(toma, zona) {
+    const nombre = toma.nombre ? escapar(capitalizar(toma.nombre)) : 'Medicamento sin nombre';
+    return `• ${nombre}: ${toma.tomada ? 'sí la tomé' : 'no la tomé'}${momentoDe(toma, zona)}`;
+  }
+
+  function lineaMedicion(medicion, zona) {
+    const momento = momentoDe(medicion, zona);
     if (medicion.tipo === 'presion') {
-      return `• Presión: ${medicion.valor}/${medicion.valor2} ${escapar(medicion.unidad)}`;
+      return `• Presión: ${medicion.valor}/${medicion.valor2} ${escapar(medicion.unidad)}${momento}`;
     }
     if (medicion.tipo === 'glucosa') {
-      return `• Glucosa: ${medicion.valor} ${escapar(medicion.unidad)}`;
+      return `• Glucosa: ${medicion.valor} ${escapar(medicion.unidad)}${momento}`;
     }
-    return `• Peso: ${medicion.valor} ${escapar(medicion.unidad)}`;
+    return `• Peso: ${medicion.valor} ${escapar(medicion.unidad)}${momento}`;
   }
 
-  function lineaSintoma(sintoma) {
+  function lineaSintoma(sintoma, zona) {
     const etiqueta = ETIQUETA_GRAVEDAD[sintoma.severidad];
     const detalle = etiqueta ? ` (${etiqueta})` : '';
-    return `• ${escapar(capitalizar(sintoma.descripcion))}${detalle}`;
+    return `• ${escapar(capitalizar(sintoma.descripcion))}${detalle}${momentoDe(sintoma, zona)}`;
   }
 
-  function resumenDe(estado) {
+  function resumenDe(estado, zona) {
     const secciones = [];
+    const lineas = (items, linea) => items.map((item) => linea(item, zona));
 
     if (estado.borrador.medicacion.length > 0) {
-      secciones.push(['<b>Medicación</b>', ...estado.borrador.medicacion.map(lineaMedicacion)]);
+      secciones.push(['<b>Medicación</b>', ...lineas(estado.borrador.medicacion, lineaMedicacion)]);
     }
     if (estado.borrador.mediciones.length > 0) {
-      secciones.push(['<b>Mediciones</b>', ...estado.borrador.mediciones.map(lineaMedicion)]);
+      secciones.push(['<b>Mediciones</b>', ...lineas(estado.borrador.mediciones, lineaMedicion)]);
     }
     if (estado.borrador.sintomas.length > 0) {
-      secciones.push(['<b>Síntomas</b>', ...estado.borrador.sintomas.map(lineaSintoma)]);
+      secciones.push(['<b>Síntomas</b>', ...lineas(estado.borrador.sintomas, lineaSintoma)]);
     }
 
     return {
@@ -447,7 +498,7 @@ export function crearServicioConversacion({
     // 4. Resumen y espera de confirmación.
     siguiente.estado = ESTADOS.ESPERANDO_CONFIRMACION;
     const guardado = guardarEstado(chatId, siguiente);
-    return conAvisos(resumenDe(guardado), avisos);
+    return conAvisos(resumenDe(guardado, zonaDe(paciente)), avisos);
   }
 
   // -------------------------------------------------------------------------
@@ -455,13 +506,32 @@ export function crearServicioConversacion({
   // -------------------------------------------------------------------------
 
   /** Todo o nada: si el repo ofrece transacciones, el borrador se guarda en una sola. */
-  function persistir(pacienteId, borrador) {
-    const guardar = () => persistirSinTransaccion(pacienteId, borrador);
+  function persistir(pacienteId, borrador, mensajes) {
+    const guardar = () => persistirSinTransaccion(pacienteId, borrador, mensajes);
     return typeof repos.transaccion === 'function' ? repos.transaccion(guardar) : guardar();
   }
 
-  async function persistirSinTransaccion(pacienteId, borrador) {
+  /**
+   * Trazabilidad: el texto (anonimizado) de los mensajes que formaron el
+   * reporte se guarda cifrado y cada registro apunta a él. Caduca solo
+   * (ver `mensajes.repo.js`); al caducar, los registros quedan sin mensaje.
+   */
+  async function guardarMensajeOriginal(pacienteId, mensajes, cuando) {
+    const textos = (mensajes ?? []).filter(Boolean);
+    if (!repos.mensajes || textos.length === 0) return null;
+
+    const guardado = await repos.mensajes.guardarMensaje({
+      pacienteId,
+      texto: textos.join('\n'),
+      recibidoEn: cuando,
+    });
+    return guardado?.id ?? null;
+  }
+
+  async function persistirSinTransaccion(pacienteId, borrador, mensajes) {
     const cuando = new Date(relojMs()).toISOString();
+    const mensajeId = await guardarMensajeOriginal(pacienteId, mensajes, cuando);
+    const origen = mensajeId ? { mensajeId } : {};
 
     for (const medicion of borrador.mediciones) {
       await repos.mediciones.guardarMedicion({
@@ -470,7 +540,9 @@ export function crearServicioConversacion({
         valor: medicion.valor,
         valor2: medicion.valor2 ?? null,
         unidad: medicion.unidad,
-        medidaEn: cuando,
+        medidaEn: medicion.ocurridoEn ?? cuando,
+        esCritica: esCritica(medicion),
+        ...origen,
       });
     }
 
@@ -482,7 +554,8 @@ export function crearServicioConversacion({
         pacienteId,
         descripcion: sintoma.descripcion,
         nivelGravedad,
-        reportadoEn: cuando,
+        reportadoEn: sintoma.ocurridoEn ?? cuando,
+        ...origen,
       });
     }
 
@@ -496,7 +569,8 @@ export function crearServicioConversacion({
         medicamentoId: medicamento?.id ?? null,
         nombreReportado: toma.nombre ?? null,
         tomada: toma.tomada,
-        tomadaEn: cuando,
+        tomadaEn: toma.ocurridoEn ?? cuando,
+        ...origen,
       });
     }
   }
@@ -530,7 +604,7 @@ export function crearServicioConversacion({
     guardarEstado(chatId, { ...estado, token: null, pendienteSeveridad: null });
 
     try {
-      await persistir(paciente.id, borrador);
+      await persistir(paciente.id, borrador, estado.mensajes);
     } catch (error) {
       registrarError('guardar el borrador', error);
       // El guardado es atómico: no quedó nada a medias. Se restaura el borrador
@@ -550,9 +624,12 @@ export function crearServicioConversacion({
       estado: ESTADOS.INACTIVO,
       modo: 'libre',
       borrador: borradorVacio(),
+      mensajes: [],
       token: null,
       pendienteSeveridad: null,
     });
+    // Lo ya guardado no debe volver a extraerse como "contexto".
+    olvidarContexto(chatId);
 
     return { texto: resumenGuardado(borrador), editarMensaje: true, aviso: 'Guardado' };
   }
@@ -663,16 +740,23 @@ export function crearServicioConversacion({
     }
 
     const anonimizado = anonimizar(limpio, { nombres: [paciente.alias] });
+    const momento = new Date(relojMs());
+    const contexto = leerContexto(chatId);
 
     let extraccion;
     try {
-      extraccion = await extractor.extraer(anonimizado);
+      extraccion = await extractor.extraer(anonimizado, {
+        ahora: momento,
+        zonaHoraria: zonaDe(paciente),
+        contexto,
+      });
     } catch (error) {
       registrarError('la extracción', error);
       return { texto: TEXTO_ERROR_EXTRACCION };
     }
+    recordarMensaje(chatId, anonimizado);
 
-    const { validos, rechazados } = validar(extraccion);
+    const { validos, rechazados } = validar(extraccion, { ahora: momento });
     const avisos = motivosDeRechazo(rechazados);
     const estado = leerEstado(chatId);
 
@@ -694,7 +778,13 @@ export function crearServicioConversacion({
     const corrigiendo = base.estado === ESTADOS.CORRIGIENDO;
     const borrador = fusionarBorrador(corrigiendo ? borradorVacio() : base.borrador, validos);
 
-    const siguiente = { ...base, borrador, pendienteSeveridad: null };
+    const mensajesPrevios = corrigiendo ? [] : (base.mensajes ?? []);
+    const siguiente = {
+      ...base,
+      borrador,
+      mensajes: [...mensajesPrevios, anonimizado],
+      pendienteSeveridad: null,
+    };
 
     if (corrigiendo) {
       // Lo reescrito reemplaza lo anterior y va directo al resumen.
@@ -730,6 +820,7 @@ export function crearServicioConversacion({
   /** `/cancelar`: se descarta lo que había a medias y no se guarda nada. */
   async function cancelar({ chatId } = {}) {
     almacenEstado.limpiar(chatId);
+    olvidarContexto(chatId);
     return {
       texto: 'Listo, cancelé lo que estábamos registrando. No guardé nada.',
       editarMensaje: false,

@@ -45,11 +45,51 @@ function textoDe(valor) {
   return typeof valor === 'string' ? valor.trim() : '';
 }
 
+/** Tolerancia para relojes desfasados: "ahorita" no debe contar como futuro. */
+const TOLERANCIA_FUTURO_MS = 10 * 60 * 1000;
+
+/** Hasta cuántos días atrás se acepta registrar algo (DK-202). */
+export const DIAS_MAXIMOS_ATRAS = 7;
+
+/**
+ * Revisa `ocurridoEn` (DK-202). Sin fecha no hay nada que revisar: se guarda
+ * con la hora de confirmación.
+ *
+ * @returns {{ ok: true, extra: object } | { ok: false, motivo: string }}
+ */
+function revisarMomento(item, ahora) {
+  const valor = item?.ocurridoEn;
+  if (valor === undefined || valor === null) return { ok: true, extra: {} };
+
+  const momento = new Date(valor).getTime();
+  if (!Number.isFinite(momento)) {
+    return {
+      ok: false,
+      motivo: 'No entendí cuándo pasó. Dímelo de nuevo, por ejemplo "ayer en la noche".',
+    };
+  }
+
+  const referencia = new Date(ahora ?? Date.now()).getTime();
+  if (momento > referencia + TOLERANCIA_FUTURO_MS) {
+    return {
+      ok: false,
+      motivo: 'No puedo registrar algo que todavía no pasa. Revisa el día o la hora.',
+    };
+  }
+  if (momento < referencia - DIAS_MAXIMOS_ATRAS * 86_400_000) {
+    return {
+      ok: false,
+      motivo: `Solo puedo registrar cosas de los últimos ${DIAS_MAXIMOS_ATRAS} días.`,
+    };
+  }
+  return { ok: true, extra: { ocurridoEn: new Date(momento).toISOString() } };
+}
+
 // ---------------------------------------------------------------------------
 // Validadores por tipo
 // ---------------------------------------------------------------------------
 
-function validarMedicacion(items, validos, rechazados) {
+function validarMedicacion(items, validos, rechazados, ahora) {
   for (const item of items) {
     if (!item || typeof item.tomada !== 'boolean') {
       rechazados.push({
@@ -59,12 +99,18 @@ function validarMedicacion(items, validos, rechazados) {
       continue;
     }
 
+    const momento = revisarMomento(item, ahora);
+    if (!momento.ok) {
+      rechazados.push({ item, motivo: momento.motivo });
+      continue;
+    }
+
     const nombre = textoDe(item.nombre);
-    validos.medicacion.push({ tomada: item.tomada, nombre: nombre || null });
+    validos.medicacion.push({ tomada: item.tomada, nombre: nombre || null, ...momento.extra });
   }
 }
 
-function validarMediciones(items, validos, rechazados) {
+function validarMediciones(items, validos, rechazados, ahora) {
   for (const item of items) {
     const tipo = textoDe(item?.tipo).toLowerCase();
     const rango = RANGOS[tipo];
@@ -118,7 +164,19 @@ function validarMediciones(items, validos, rechazados) {
         continue;
       }
 
-      validos.mediciones.push({ tipo, valor, valor2: diastolica, unidad: rango.unidad });
+      const momentoPresion = revisarMomento(item, ahora);
+      if (!momentoPresion.ok) {
+        rechazados.push({ item, motivo: momentoPresion.motivo });
+        continue;
+      }
+
+      validos.mediciones.push({
+        tipo,
+        valor,
+        valor2: diastolica,
+        unidad: rango.unidad,
+        ...momentoPresion.extra,
+      });
       continue;
     }
 
@@ -130,11 +188,17 @@ function validarMediciones(items, validos, rechazados) {
       continue;
     }
 
-    validos.mediciones.push({ tipo, valor, unidad: rango.unidad });
+    const momento = revisarMomento(item, ahora);
+    if (!momento.ok) {
+      rechazados.push({ item, motivo: momento.motivo });
+      continue;
+    }
+
+    validos.mediciones.push({ tipo, valor, unidad: rango.unidad, ...momento.extra });
   }
 }
 
-function validarSintomas(items, validos, rechazados) {
+function validarSintomas(items, validos, rechazados, ahora) {
   for (const item of items) {
     const descripcion = textoDe(item?.descripcion);
 
@@ -143,11 +207,17 @@ function validarSintomas(items, validos, rechazados) {
       continue;
     }
 
+    const momento = revisarMomento(item, ahora);
+    if (!momento.ok) {
+      rechazados.push({ item, motivo: momento.motivo });
+      continue;
+    }
+
     const severidad = item?.severidad;
 
     // Sin intensidad no se rechaza: la conversación la pregunta con botones.
     if (severidad === null || severidad === undefined) {
-      validos.sintomas.push({ descripcion, severidad: null });
+      validos.sintomas.push({ descripcion, severidad: null, ...momento.extra });
       continue;
     }
 
@@ -159,7 +229,7 @@ function validarSintomas(items, validos, rechazados) {
       continue;
     }
 
-    validos.sintomas.push({ descripcion, severidad });
+    validos.sintomas.push({ descripcion, severidad, ...momento.extra });
   }
 }
 
@@ -171,20 +241,21 @@ function validarSintomas(items, validos, rechazados) {
  * Separa lo que se puede guardar de lo que hay que corregir.
  *
  * @param {object} extraccion Resultado de `extractor.js`.
+ * @param {{ ahora?: Date }} [opciones] Reloj para revisar `ocurridoEn` (futuro / muy viejo).
  * @returns {{
  *   validos: { medicacion: Array<object>, mediciones: Array<object>, sintomas: Array<object> },
  *   rechazados: Array<{ item: object, motivo: string }>
  * }}
  */
-export function validarExtraccion(extraccion) {
+export function validarExtraccion(extraccion, { ahora } = {}) {
   const entrada = extraccion ?? {};
 
   const validos = { medicacion: [], mediciones: [], sintomas: [] };
   const rechazados = [];
 
-  validarMedicacion(comoArreglo(entrada.medicacion), validos, rechazados);
-  validarMediciones(comoArreglo(entrada.mediciones), validos, rechazados);
-  validarSintomas(comoArreglo(entrada.sintomas), validos, rechazados);
+  validarMedicacion(comoArreglo(entrada.medicacion), validos, rechazados, ahora);
+  validarMediciones(comoArreglo(entrada.mediciones), validos, rechazados, ahora);
+  validarSintomas(comoArreglo(entrada.sintomas), validos, rechazados, ahora);
 
   return { validos, rechazados };
 }

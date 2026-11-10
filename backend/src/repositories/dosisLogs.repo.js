@@ -2,7 +2,7 @@
  * Repositorio PostgreSQL de `registros_dosis` (DK-103, DK-204).
  *
  * Misma interfaz y DTO que `mocks/dosisLogs.mock.js`:
- *   { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn }
+ *   { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn, mensajeId }
  *
  * Requiere la migración 004: una toma reportada en el chat no tiene horario
  * (`horario_id` NULL) y se liga directo al paciente. Para esas tomas,
@@ -27,11 +27,12 @@ function comoDTO(fila) {
     nombreReportado: fila.nombre_reportado,
     estado: fila.estado,
     tomadaEn: fila.tomada_en ?? fila.programada_en,
+    mensajeId: fila.mensaje_id ?? null,
   };
 }
 
 const COLUMNAS =
-  'id, paciente_id, medicamento_id, nombre_reportado, estado, tomada_en, programada_en';
+  'id, paciente_id, medicamento_id, nombre_reportado, estado, tomada_en, programada_en, mensaje_id';
 
 export async function guardarTomaMedicamento({
   pacienteId,
@@ -39,6 +40,7 @@ export async function guardarTomaMedicamento({
   nombreReportado = null,
   tomada,
   tomadaEn,
+  mensajeId = null,
 } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
   if (typeof tomada !== 'boolean') throw new Error('tomada debe ser booleano');
@@ -48,8 +50,9 @@ export async function guardarTomaMedicamento({
 
   const { rows } = await query(
     `INSERT INTO registros_dosis
-       (paciente_id, medicamento_id, nombre_reportado, horario_id, programada_en, tomada_en, estado)
-     VALUES ($1, $2, $3, NULL, $4::timestamp, CASE WHEN $5 THEN $4::timestamp END, $6)
+       (paciente_id, medicamento_id, nombre_reportado, horario_id, programada_en, tomada_en,
+        estado, mensaje_id)
+     VALUES ($1, $2, $3, NULL, $4::timestamp, CASE WHEN $5 THEN $4::timestamp END, $6, $7)
      RETURNING ${COLUMNAS}`,
     [
       idPaciente,
@@ -58,6 +61,7 @@ export async function guardarTomaMedicamento({
       momento,
       tomada,
       tomada ? 'TOMADA' : 'SALTADA',
+      mensajeId ? String(mensajeId) : null,
     ]
   );
   return comoDTO(rows[0]);

@@ -61,3 +61,23 @@ Esto resuelve en el código el hallazgo 2 con la opción "derecho al olvido": `d
 
 El borrado es en una sola sentencia (todo o nada). No se registran datos del paciente en logs.
 
+## D12 · Cliente de Claude en `src/ai/claude.js` (DK-201)
+
+El criterio de DK-201 pide `services/claude.js`. Se siguió `AGENTS.md` §4, que pone el cliente en `src/ai/`; `services/extractor.js` lo usa. La salida se pide con structured outputs y se valida con Zod en Node, no con `messages.parse()`, porque los errores del SDK incluyen fragmentos de la respuesta (datos clínicos) y podrían terminar en logs. Si Claude falla o declina, el paciente recibe «No pude interpretar tu mensaje…»; **no** se cae al extractor por regex en silencio. El equipo puede cambiarlo si lo prefiere. No se activó el fallback del servidor para rechazos (`fallbacks`): con `claude-sonnet-5-5` solo cubre categorías como ciberseguridad, que no aplican a este bot. Detalle en `docs/ia-y-seguridad.md`.
+
+## D13 · Momento del dato (DK-202)
+
+Cada medición, síntoma o toma puede traer `ocurridoEn` cuando el paciente dice cuándo pasó; si no lo dice, se guarda con la hora de confirmación. Si menciona el día sin la hora, se usan las 12:00. Las partes del día se traducen a horas fijas: madrugada 3:00, mañana 9:00, mediodía 13:00, tarde 16:00 y noche 21:00. Se rechazan los momentos futuros y los de más de 7 días atrás. La zona es la del paciente (`pacientes.zona_horaria`), con `TZ` como respaldo.
+
+## D14 · Mensaje original anonimizado, cifrado y con retención (tarea técnica del Sprint 2)
+
+Para la trazabilidad se guarda el texto **anonimizado** (no el original con nombres o teléfonos), por recolección mínima. Va cifrado con AES-256 en `mensajes_reporte` (migración 006) y enlazado desde cada registro con `mensaje_id`. Solo se guarda lo confirmado. Caduca a los 90 días (`MENSAJES_RETENCION_DIAS`) y lo borra un temporizador diario en `main.js`; cuando exista `jobs/scheduler.js` (DK-302) puede moverse ahí. **Pendiente de que el equipo o el PO confirmen** el plazo de 90 días.
+
+## D15 · Contexto de conversación solo en memoria
+
+Los «últimos N mensajes» de la tarea técnica del Sprint 2 son los 5 más recientes por chat, anonimizados, en memoria y con caducidad de 30 minutos. Solo los usa Claude como contexto y se le pide extraer únicamente del mensaje actual, para no registrar dos veces lo mismo. Se olvidan al confirmar, con `/cancelar` y con `/borrar_datos`.
+
+## D16 · `es_critica` calculada por el servicio (DK-203)
+
+`src/config/thresholds.js` existe con todos los umbrales en `null` y `esCritica()` devuelve `false` mientras sigan así. La conversación la calcula al guardar cada medición y los repositorios ya no fijan `FALSE` por su cuenta. **Pendiente del equipo:** definir qué profesional de la salud valida los umbrales y registrarlo en `VALIDACION_CLINICA`.
+

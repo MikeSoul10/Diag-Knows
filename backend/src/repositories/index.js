@@ -5,13 +5,14 @@
  * Eso es lo que permite pasar de mocks a PostgreSQL sin tocar la lógica de negocio.
  *
  * Contrato de los DTO (ya normalizado en camelCase), idéntico en mock y en real:
- *   paciente      -> { id, telegramChatId, alias, anioNacimiento, estado, creadoEn, consentimientoVigente }
+ *   paciente      -> { id, telegramChatId, alias, anioNacimiento, estado, creadoEn, zonaHoraria, consentimientoVigente }
  *   consentimiento-> { id, pacienteId, aceptado, versionPrivacidad, aceptadoEn }
  *   enfermedad    -> { id, codigo, nombre }
  *   medicamento   -> { id, pacienteId, nombre, dosis, frecuencia, fechaInicio, fechaFin }
- *   medicion      -> { id, pacienteId, tipo, valor, valor2, unidad, esCritica, medidaEn }
- *   sintoma       -> { id, pacienteId, descripcion, nivelGravedad, reportadoEn }
- *   toma          -> { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn }
+ *   medicion      -> { id, pacienteId, tipo, valor, valor2, unidad, esCritica, medidaEn, mensajeId }
+ *   sintoma       -> { id, pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }
+ *   toma          -> { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn, mensajeId }
+ *   mensaje       -> { id, pacienteId, texto?, recibidoEn, expiraEn }  (trazabilidad, 006)
  *
  * La elección mock/PostgreSQL se hace EN CADA LLAMADA con `usarRepositoriosMock()`
  * (USE_MOCK_REPOS, o mock si no hay DATABASE_URL). Así no importa el orden en
@@ -29,6 +30,7 @@ import * as sintomasMock from './mocks/sintomas.mock.js';
 import * as medicamentosMock from './mocks/medicamentos.mock.js';
 import * as dosisLogsMock from './mocks/dosisLogs.mock.js';
 import * as saludMock from './mocks/salud.mock.js';
+import * as mensajesMock from './mocks/mensajes.mock.js';
 
 import * as patientsReal from './patients.repo.js';
 import * as consentimientoReal from './consentimiento.repo.js';
@@ -38,6 +40,7 @@ import * as sintomasReal from './sintomas.repo.js';
 import * as medicamentosReal from './medicamentos.repo.js';
 import * as dosisLogsReal from './dosisLogs.repo.js';
 import * as saludReal from './salud.repo.js';
+import * as mensajesReal from './mensajes.repo.js';
 
 /**
  * Fachada que delega cada función al mock o al repo real según el modo vigente.
@@ -72,6 +75,7 @@ export const sintomas = elegir(sintomasMock, sintomasReal);
 export const medicamentos = elegir(medicamentosMock, medicamentosReal);
 export const dosisLogs = elegir(dosisLogsMock, dosisLogsReal);
 export const salud = elegir(saludMock, saludReal);
+export const mensajes = elegir(mensajesMock, mensajesReal);
 
 /**
  * Ejecuta `fn()` de forma atómica: en PostgreSQL, todas las llamadas a los
@@ -101,6 +105,7 @@ export function eliminarPaciente(pacienteId) {
         sintomasMock,
         medicamentosMock,
         dosisLogsMock,
+        mensajesMock,
       ]) {
         await mock.eliminarPorPaciente(pacienteId);
       }
@@ -118,4 +123,5 @@ export function reiniciarRepositorios() {
   sintomas.__reset();
   medicamentos.__reset();
   dosisLogs.__reset();
+  mensajes.__reset();
 }

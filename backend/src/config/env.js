@@ -49,6 +49,22 @@ export function usarIAMock() {
   return !(process.env.ANTHROPIC_API_KEY || '').trim();
 }
 
+/** Zona horaria si el paciente no tiene una propia (TZ, o Ciudad de México). */
+export function zonaHorariaPorDefecto() {
+  return (process.env.TZ || '').trim() || 'America/Mexico_City';
+}
+
+/** Días que se conserva el mensaje original de un reporte (trazabilidad). */
+export function diasRetencionMensajes() {
+  const texto = (process.env.MENSAJES_RETENCION_DIAS || '').trim();
+  if (!texto) return 90;
+  const dias = Number(texto);
+  if (!Number.isInteger(dias) || dias < 1) {
+    throw new Error('MENSAJES_RETENCION_DIAS debe ser un entero mayor o igual a 1.');
+  }
+  return dias;
+}
+
 export function puertoHttp() {
   const puerto = Number.parseInt(process.env.PORT || '3000', 10);
   if (!Number.isInteger(puerto) || puerto < 0 || puerto > 65535) {

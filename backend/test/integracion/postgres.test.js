@@ -155,6 +155,7 @@ describe('PostgreSQL (integración)', { skip: omitir }, () => {
           unidad: 'mg/dL',
           esCritica: false,
           medidaEn,
+          mensajeId: null,
         }
       );
       await repos.mediciones.guardarMedicion({
@@ -525,6 +526,96 @@ describe('PostgreSQL (integración)', { skip: omitir }, () => {
       assert.equal(medicion.valor, 115);
       const [sintoma] = await repos.sintomas.listarPorPaciente(p.id);
       assert.equal(sintoma.nivelGravedad, 'LEVE');
+    });
+  });
+
+  describe('Sprint 2: momento, trazabilidad y zona horaria (migraciones 005 y 006)', () => {
+    async function pacienteListo(chat) {
+      await registration.iniciar(chat);
+      await registration.aceptarConsentimiento(chat);
+      return repos.patients.findByTelegramChatId(chat);
+    }
+
+    test('el paciente expone su zona horaria (DEFAULT de la migración 005)', async () => {
+      const p = await pacienteListo(555300);
+      assert.equal(p.zonaHoraria, 'America/Mexico_City');
+    });
+
+    test('mensajes_reporte guarda el texto cifrado y caduca con su retención', async () => {
+      const p = await pacienteListo(555301);
+      const guardado = await repos.mensajes.guardarMensaje({
+        pacienteId: p.id,
+        texto: 'glucosa en 120',
+        recibidoEn: '2026-11-10T18:00:00Z',
+        retencionDias: 90,
+      });
+      assert.equal(guardado.texto, undefined);
+      assert.equal(guardado.expiraEn, '2027-02-08T18:00:00.000Z');
+
+      const { rows } = await pool.query(
+        "SELECT position('glucosa' in encode(texto_cifrado, 'escape')) AS pos FROM mensajes_reporte"
+      );
+      assert.equal(rows[0].pos, 0, 'el texto no debe estar en claro');
+
+      assert.equal((await repos.mensajes.obtener(guardado.id)).texto, 'glucosa en 120');
+      assert.equal(await repos.mensajes.eliminarVencidos('2027-01-01T00:00:00Z'), 0);
+      assert.equal(await repos.mensajes.eliminarVencidos('2027-02-09T00:00:00Z'), 1);
+    });
+
+    test('reporte confirmado: momento dicho, mensaje enlazado y ON DELETE SET NULL al caducar', async () => {
+      const { crearConversacion } = await import('../../src/channel/conversacion.instancia.js');
+      let n = 0;
+      // Martes 10 nov 2026, 12:30 en Ciudad de México.
+      const ahora = () => new Date('2026-11-10T18:30:00Z');
+      const servicio = crearConversacion({ generarToken: () => `tok${(n += 1)}`, ahora });
+
+      const chat = 555302;
+      const p = await pacienteListo(chat);
+
+      const resumen = await servicio.procesarMensaje({
+        chatId: chat,
+        texto: 'anoche me dolió mucho la cabeza y me tomé la metformina',
+      });
+      const boton = resumen.botones.flat().find((b) => b.callback.startsWith('conv:ok:'));
+      await servicio.procesarCallback({
+        chatId: chat,
+        accion: 'ok',
+        token: boton.callback.split(':')[2],
+      });
+
+      const [sintoma] = await repos.sintomas.listarPorPaciente(p.id);
+      const [toma] = await repos.dosisLogs.listarPorPaciente(p.id);
+      assert.equal(new Date(sintoma.reportadoEn).toISOString(), '2026-11-10T03:00:00.000Z');
+      assert.ok(sintoma.mensajeId);
+      assert.equal(toma.mensajeId, sintoma.mensajeId);
+
+      const mensaje = await repos.mensajes.obtener(sintoma.mensajeId);
+      assert.match(mensaje.texto, /anoche me dolió mucho la cabeza/);
+
+      await repos.mensajes.eliminarVencidos('2030-01-01T00:00:00Z');
+      const [despues] = await repos.sintomas.listarPorPaciente(p.id);
+      assert.equal(despues.mensajeId, null);
+      assert.equal(despues.descripcion, 'dolor de cabeza');
+    });
+
+    test('borrar al paciente borra sus mensajes (ON DELETE CASCADE)', async () => {
+      const p = await pacienteListo(555303);
+      await repos.mensajes.guardarMensaje({ pacienteId: p.id, texto: 'tos' });
+      await repos.eliminarPaciente(p.id);
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM mensajes_reporte');
+      assert.equal(rows[0].n, 0);
+    });
+
+    test('es_critica se guarda como lo decide el servicio', async () => {
+      const p = await pacienteListo(555304);
+      const m = await repos.mediciones.guardarMedicion({
+        pacienteId: p.id,
+        tipo: 'glucosa',
+        valor: 115,
+        unidad: 'mg/dL',
+        esCritica: true,
+      });
+      assert.equal(m.esCritica, true);
     });
   });
 });

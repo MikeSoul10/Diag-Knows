@@ -2,9 +2,9 @@
  * Repositorio PostgreSQL de `pacientes` (DK-103, DK-105).
  *
  * Misma interfaz y DTO que `mocks/patients.mock.js`:
- *   { id, telegramChatId, alias, anioNacimiento, estado, creadoEn, consentimientoVigente }
+ *   { id, telegramChatId, alias, anioNacimiento, estado, creadoEn, zonaHoraria, consentimientoVigente }
  *
- * Requiere la migración 003 (alias, anio_nacimiento).
+ * Requiere las migraciones 003 (alias, anio_nacimiento) y 005 (zona_horaria).
  * `consentimientoVigente` sale del registro MÁS RECIENTE de registros_consentimiento.
  */
 
@@ -14,6 +14,7 @@ const ESTADOS_VALIDOS = ['ACTIVO', 'INACTIVO', 'BLOQUEADO'];
 
 const SELECT_PACIENTE = `
   SELECT p.id, p.telegram_chat_id, p.alias, p.anio_nacimiento, p.estado, p.creado_en,
+         p.zona_horaria,
          COALESCE((SELECT rc.aceptado
                      FROM registros_consentimiento rc
                     WHERE rc.paciente_id = p.id
@@ -30,6 +31,7 @@ function comoDTO(fila) {
     anioNacimiento: fila.anio_nacimiento,
     estado: fila.estado,
     creadoEn: fila.creado_en,
+    zonaHoraria: fila.zona_horaria,
     consentimientoVigente: fila.consentimiento_vigente,
   };
 }

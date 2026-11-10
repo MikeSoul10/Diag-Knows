@@ -2,12 +2,12 @@
  * Mock en memoria de `sintomas`.
  *
  * Misma interfaz que tendrá `src/repositories/sintomas.repo.js`:
- *   guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn }) -> sintoma
+ *   guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }) -> sintoma
  *   listarPorPaciente(pacienteId) -> sintomas
  *   __reset()
  *
  * Contrato del DTO (idéntico al que debe devolver el repo real):
- *   { id, pacienteId, descripcion, nivelGravedad, reportadoEn }
+ *   { id, pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }
  *
  * `nivelGravedad` usa el vocabulario de la columna `nivel_gravedad`
  * ('LEVE' | 'MODERADO' | 'GRAVE'). El 1 | 2 | 3 que pregunta la conversación se
@@ -37,10 +37,17 @@ function comoDTO(fila) {
     descripcion: fila.descripcion,
     nivelGravedad: fila.nivelGravedad,
     reportadoEn: fila.reportadoEn,
+    mensajeId: fila.mensajeId,
   };
 }
 
-export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn } = {}) {
+export async function guardarSintoma({
+  pacienteId,
+  descripcion,
+  nivelGravedad,
+  reportadoEn,
+  mensajeId = null,
+} = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
   const texto = typeof descripcion === 'string' ? descripcion.trim() : '';
@@ -56,6 +63,7 @@ export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, r
     descripcion: texto,
     nivelGravedad,
     reportadoEn: reportadoEn ? new Date(reportadoEn).toISOString() : new Date().toISOString(),
+    mensajeId: mensajeId ? String(mensajeId) : null,
   };
 
   if (!porPaciente.has(idPaciente)) porPaciente.set(idPaciente, []);

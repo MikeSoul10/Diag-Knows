@@ -2,12 +2,12 @@
  * Mock en memoria de `registros_dosis`.
  *
  * Misma interfaz que tendrá `src/repositories/dosisLogs.repo.js`:
- *   guardarTomaMedicamento({ pacienteId, medicamentoId, nombreReportado, tomada, tomadaEn }) -> registro
+ *   guardarTomaMedicamento({ pacienteId, medicamentoId, nombreReportado, tomada, tomadaEn, mensajeId }) -> registro
  *   listarPorPaciente(pacienteId) -> registros
  *   __reset()
  *
  * Contrato del DTO (idéntico al que debe devolver el repo real):
- *   { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn }
+ *   { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn, mensajeId }
  *
  * `estado` usa el vocabulario de la columna `estado`: 'TOMADA' cuando el
  * paciente confirma la toma y 'SALTADA' cuando dice que no la tomó.
@@ -36,6 +36,7 @@ function comoDTO(fila) {
     nombreReportado: fila.nombreReportado,
     estado: fila.estado,
     tomadaEn: fila.tomadaEn,
+    mensajeId: fila.mensajeId,
   };
 }
 
@@ -45,6 +46,7 @@ export async function guardarTomaMedicamento({
   nombreReportado = null,
   tomada,
   tomadaEn,
+  mensajeId = null,
 } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
@@ -62,6 +64,7 @@ export async function guardarTomaMedicamento({
     nombreReportado: nombre || null,
     estado: tomada ? 'TOMADA' : 'SALTADA',
     tomadaEn: tomadaEn ? new Date(tomadaEn).toISOString() : new Date().toISOString(),
+    mensajeId: mensajeId ? String(mensajeId) : null,
   };
 
   if (!porPaciente.has(idPaciente)) porPaciente.set(idPaciente, []);

@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extraer, extraerConClaude, extraerMock } from '../src/services/extractor.js';
+import { extraer, extraerMock } from '../src/services/extractor.js';
 
 // Las pruebas siempre usan el extractor por regex, aunque la máquina tenga llave.
 process.env.USE_MOCK_AI = 'true';
@@ -164,16 +164,20 @@ describe('selección de implementación', () => {
     assert.deepEqual(await extraer('glucosa en 115'), extraerMock('glucosa en 115'));
   });
 
-  test('extraerConClaude avisa que no está implementado', async () => {
-    await assert.rejects(() => extraerConClaude('glucosa en 115'), /No implementado/);
-  });
-
-  test('con USE_MOCK_AI=false intenta Claude y falla de forma controlada', async () => {
+  test('con USE_MOCK_AI=false intenta Claude y falla de forma controlada sin red', async () => {
+    const modeloPrevio = process.env.ANTHROPIC_MODEL;
     process.env.USE_MOCK_AI = 'false';
+    process.env.ANTHROPIC_MODEL = '';
     try {
-      await assert.rejects(() => extraer('glucosa en 115'), /No implementado/);
+      // Sin modelo configurado falla antes de crear el cliente: no hay llamada de red.
+      await assert.rejects(() => extraer('glucosa en 115'), {
+        name: 'ErrorIA',
+        codigo: 'configuracion',
+      });
     } finally {
       process.env.USE_MOCK_AI = 'true';
+      if (modeloPrevio === undefined) delete process.env.ANTHROPIC_MODEL;
+      else process.env.ANTHROPIC_MODEL = modeloPrevio;
     }
   });
 });

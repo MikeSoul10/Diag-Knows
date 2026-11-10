@@ -2,7 +2,7 @@
  * Repositorio PostgreSQL de `sintomas` (DK-103, DK-202).
  *
  * Misma interfaz y DTO que `mocks/sintomas.mock.js`:
- *   { id, pacienteId, descripcion, nivelGravedad, reportadoEn }
+ *   { id, pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }
  *
  * La descripción se cifra EN SQL con pgp_sym_encrypt (AES-256) en
  * `descripcion_cifrada`. Nunca se registra en logs.
@@ -25,10 +25,17 @@ function comoDTO(fila) {
     descripcion: fila.descripcion,
     nivelGravedad: fila.nivel_gravedad,
     reportadoEn: fila.registrado_en,
+    mensajeId: fila.mensaje_id ?? null,
   };
 }
 
-export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn } = {}) {
+export async function guardarSintoma({
+  pacienteId,
+  descripcion,
+  nivelGravedad,
+  reportadoEn,
+  mensajeId = null,
+} = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
   const texto = typeof descripcion === 'string' ? descripcion.trim() : '';
@@ -38,11 +45,18 @@ export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, r
   }
 
   const { rows } = await query(
-    `INSERT INTO sintomas (paciente_id, descripcion_cifrada, nivel_gravedad, registrado_en)
+    `INSERT INTO sintomas (paciente_id, descripcion_cifrada, nivel_gravedad, registrado_en, mensaje_id)
      VALUES ($1, pgp_sym_encrypt($2::text, $3::text, '${OPCIONES_PGP}'), $4,
-             COALESCE($5::timestamp, CURRENT_TIMESTAMP))
-     RETURNING id, paciente_id, $2::text AS descripcion, nivel_gravedad, registrado_en`,
-    [idPaciente, texto, llaveCifrado(), nivelGravedad, aIsoUtc(reportadoEn)]
+             COALESCE($5::timestamp, CURRENT_TIMESTAMP), $6)
+     RETURNING id, paciente_id, $2::text AS descripcion, nivel_gravedad, registrado_en, mensaje_id`,
+    [
+      idPaciente,
+      texto,
+      llaveCifrado(),
+      nivelGravedad,
+      aIsoUtc(reportadoEn),
+      mensajeId ? String(mensajeId) : null,
+    ]
   );
   return comoDTO(rows[0]);
 }
@@ -50,7 +64,7 @@ export async function guardarSintoma({ pacienteId, descripcion, nivelGravedad, r
 export async function listarPorPaciente(pacienteId) {
   const { rows } = await query(
     `SELECT id, paciente_id, pgp_sym_decrypt(descripcion_cifrada, $2::text) AS descripcion,
-            nivel_gravedad, registrado_en
+            nivel_gravedad, registrado_en, mensaje_id
        FROM sintomas
       WHERE paciente_id = $1
       ORDER BY registrado_en, id`,
@@ -63,7 +77,7 @@ export async function listarPorPaciente(pacienteId) {
 export async function listarPorRango(pacienteId, desde, hasta) {
   const { rows } = await query(
     `SELECT id, paciente_id, pgp_sym_decrypt(descripcion_cifrada, $4::text) AS descripcion,
-            nivel_gravedad, registrado_en
+            nivel_gravedad, registrado_en, mensaje_id
        FROM sintomas
       WHERE paciente_id = $1 AND registrado_en >= $2 AND registrado_en < $3
       ORDER BY registrado_en, id`,

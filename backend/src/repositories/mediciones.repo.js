@@ -2,14 +2,18 @@
  * Repositorio PostgreSQL de `mediciones` (DK-103, DK-203).
  *
  * Misma interfaz y DTO que `mocks/mediciones.mock.js`:
- *   { id, pacienteId, tipo, valor, valor2, unidad, esCritica, medidaEn }
+ *   { id, pacienteId, tipo, valor, valor2, unidad, esCritica, medidaEn, mensajeId }
+ *
+ * `mensajeId` apunta a `mensajes_reporte` (migración 006); null si se registró
+ * sin mensaje o si el mensaje ya caducó.
  *
  * - El valor se cifra EN SQL con pgp_sym_encrypt(..., 'cipher-algo=aes256') en
  *   `valor_cifrado` y se descifra con pgp_sym_decrypt al leer. La llave viaja
  *   como parámetro (ver limitación de logs de PostgreSQL en AGENTS.md §7.1).
  * - Se guarda como texto: "115", "72.5" o "120/80" para la presión.
  * - `tipo` se mapea entre el vocabulario de la app y el de la columna.
- * - `esCritica` siempre FALSE mientras los umbrales clínicos sigan en null.
+ * - `esCritica` lo decide el servicio con `config/thresholds.js`; mientras los
+ *   umbrales sigan en null siempre llega FALSE.
  * - Nunca se registran valores en logs.
  */
 
@@ -53,6 +57,7 @@ function comoDTO(fila) {
     unidad: fila.unidad,
     esCritica: fila.es_critica,
     medidaEn: fila.registrada_en,
+    mensajeId: fila.mensaje_id ?? null,
   };
 }
 
@@ -63,6 +68,8 @@ export async function guardarMedicion({
   valor2 = null,
   unidad,
   medidaEn,
+  esCritica = false,
+  mensajeId = null,
 } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
   if (!TIPOS.includes(tipo)) throw new Error(`Tipo de medición inválido: ${tipo}`);
@@ -71,10 +78,12 @@ export async function guardarMedicion({
   const texto = tipo === 'presion' ? `${valor}/${validarNumero(valor2, 'valor2')}` : String(valor);
 
   const { rows } = await query(
-    `INSERT INTO mediciones (paciente_id, tipo_medicion, valor_cifrado, unidad, es_critica, registrada_en)
-     VALUES ($1, $2, pgp_sym_encrypt($3::text, $4::text, '${OPCIONES_PGP}'), $5, FALSE,
-             COALESCE($6::timestamp, CURRENT_TIMESTAMP))
-     RETURNING id, paciente_id, tipo_medicion, $3::text AS valor, unidad, es_critica, registrada_en`,
+    `INSERT INTO mediciones
+       (paciente_id, tipo_medicion, valor_cifrado, unidad, es_critica, registrada_en, mensaje_id)
+     VALUES ($1, $2, pgp_sym_encrypt($3::text, $4::text, '${OPCIONES_PGP}'), $5, $7,
+             COALESCE($6::timestamp, CURRENT_TIMESTAMP), $8)
+     RETURNING id, paciente_id, tipo_medicion, $3::text AS valor, unidad, es_critica,
+               registrada_en, mensaje_id`,
     [
       idPaciente,
       A_COLUMNA[tipo],
@@ -82,6 +91,8 @@ export async function guardarMedicion({
       llaveCifrado(),
       unidad ? String(unidad) : UNIDADES[tipo],
       aIsoUtc(medidaEn),
+      esCritica === true,
+      mensajeId ? String(mensajeId) : null,
     ]
   );
   return comoDTO(rows[0]);
@@ -90,7 +101,7 @@ export async function guardarMedicion({
 export async function listarPorPaciente(pacienteId) {
   const { rows } = await query(
     `SELECT id, paciente_id, tipo_medicion, pgp_sym_decrypt(valor_cifrado, $2::text) AS valor,
-            unidad, es_critica, registrada_en
+            unidad, es_critica, registrada_en, mensaje_id
        FROM mediciones
       WHERE paciente_id = $1
       ORDER BY registrada_en, id`,
@@ -103,7 +114,7 @@ export async function listarPorPaciente(pacienteId) {
 export async function listarPorRango(pacienteId, desde, hasta) {
   const { rows } = await query(
     `SELECT id, paciente_id, tipo_medicion, pgp_sym_decrypt(valor_cifrado, $4::text) AS valor,
-            unidad, es_critica, registrada_en
+            unidad, es_critica, registrada_en, mensaje_id
        FROM mediciones
       WHERE paciente_id = $1 AND registrada_en >= $2 AND registrada_en < $3
       ORDER BY registrada_en, id`,
