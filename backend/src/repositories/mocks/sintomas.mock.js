@@ -2,12 +2,12 @@
  * Mock en memoria de `sintomas`.
  *
  * Misma interfaz que tendrá `src/repositories/sintomas.repo.js`:
- *   guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn }) -> sintoma
+ *   guardarSintoma({ pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }) -> sintoma
  *   listarPorPaciente(pacienteId) -> sintomas
  *   __reset()
  *
  * Contrato del DTO (idéntico al que debe devolver el repo real):
- *   { id, pacienteId, descripcion, nivelGravedad, reportadoEn }
+ *   { id, pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }
  *
  * `nivelGravedad` usa el vocabulario de la columna `nivel_gravedad`
  * ('LEVE' | 'MODERADO' | 'GRAVE'). El 1 | 2 | 3 que pregunta la conversación se
@@ -37,6 +37,7 @@ function comoDTO(fila) {
     descripcion: fila.descripcion,
     nivelGravedad: fila.nivelGravedad,
     reportadoEn: fila.reportadoEn,
+    mensajeId: fila.mensajeId,
   };
 }
 
@@ -45,6 +46,7 @@ export async function guardarSintoma({
   descripcion,
   nivelGravedad,
   reportadoEn,
+  mensajeId = null,
 } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
@@ -61,6 +63,7 @@ export async function guardarSintoma({
     descripcion: texto,
     nivelGravedad,
     reportadoEn: reportadoEn ? new Date(reportadoEn).toISOString() : new Date().toISOString(),
+    mensajeId: mensajeId ? String(mensajeId) : null,
   };
 
   if (!porPaciente.has(idPaciente)) porPaciente.set(idPaciente, []);
@@ -72,6 +75,24 @@ export async function guardarSintoma({
 export async function listarPorPaciente(pacienteId) {
   const filas = porPaciente.get(validarPacienteId(pacienteId)) ?? [];
   return filas.map(comoDTO);
+}
+
+/** Filas con `reportadoEn` en [desde, hasta), para el historial (DK-301). */
+export async function listarPorRango(pacienteId, desde, hasta) {
+  const inicio = new Date(desde).getTime();
+  const fin = new Date(hasta).getTime();
+  return (await listarPorPaciente(pacienteId)).filter((fila) => {
+    const momento = new Date(fila.reportadoEn).getTime();
+    return momento >= inicio && momento < fin;
+  });
+}
+
+/** Borra todas las filas del paciente (`/borrar_datos`, DK-303). Devuelve cuántas. */
+export async function eliminarPorPaciente(pacienteId) {
+  const clave = String(pacienteId ?? '');
+  const cantidad = porPaciente.get(clave)?.length ?? 0;
+  porPaciente.delete(clave);
+  return cantidad;
 }
 
 export function __reset() {

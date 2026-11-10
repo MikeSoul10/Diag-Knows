@@ -109,7 +109,9 @@ describe('flujo libre', () => {
     assert.match(respuesta.texto, /Dolor de cabeza \(leve\)/);
     assert.match(respuesta.texto, /¿Lo guardo\?/);
     assert.deepEqual(
-      botonesDe(respuesta).map(({ callback }) => callback.split(':')[0] + ':' + callback.split(':')[1]),
+      botonesDe(respuesta).map(
+        ({ callback }) => callback.split(':')[0] + ':' + callback.split(':')[1]
+      ),
       ['conv:ok', 'conv:no']
     );
 
@@ -142,9 +144,10 @@ describe('flujo libre', () => {
     assert.equal(guardado.mediciones[0].valor, 115);
     assert.equal(guardado.mediciones[0].medidaEn, '2026-11-03T10:00:00.000Z');
 
-    assert.deepEqual(guardado.sintomas.map((s) => [s.descripcion, s.nivelGravedad]), [
-      ['dolor de cabeza', 'LEVE'],
-    ]);
+    assert.deepEqual(
+      guardado.sintomas.map((s) => [s.descripcion, s.nivelGravedad]),
+      [['dolor de cabeza', 'LEVE']]
+    );
 
     assert.equal(guardado.dosis.length, 1);
     assert.equal(guardado.dosis[0].estado, 'TOMADA');
@@ -206,7 +209,10 @@ describe('flujo libre', () => {
     const { servicio } = crearHarness();
     await pacienteConConsentimiento();
 
-    const respuesta = await servicio.procesarMensaje({ chatId: CHAT, texto: 'hola, buenas tardes' });
+    const respuesta = await servicio.procesarMensaje({
+      chatId: CHAT,
+      texto: 'hola, buenas tardes',
+    });
 
     assert.match(respuesta.texto, /No identifiqué datos para registrar/);
     assert.match(respuesta.texto, /glucosa está en 115/);
@@ -577,7 +583,10 @@ describe('reglas del proyecto', () => {
     });
     await pacienteConConsentimiento();
 
-    const respuesta = await servicio.procesarMensaje({ chatId: CHAT, texto: 'mi glucosa está en 115' });
+    const respuesta = await servicio.procesarMensaje({
+      chatId: CHAT,
+      texto: 'mi glucosa está en 115',
+    });
 
     assert.match(respuesta.texto, /No pude interpretar tu mensaje/);
     assert.equal(errores.length, 1);

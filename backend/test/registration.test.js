@@ -116,7 +116,10 @@ describe('flujo de registro', () => {
     await registration.procesarTexto(chatId, 'Ana');
     await registration.procesarTexto(chatId, '1990');
 
-    const resultado = await registration.elegirEnfermedad(chatId, '99999999-9999-4999-8999-999999999999');
+    const resultado = await registration.elegirEnfermedad(
+      chatId,
+      '99999999-9999-4999-8999-999999999999'
+    );
     assert.equal(resultado.tipo, 'error');
     assert.equal(resultado.paso, 'enfermedad');
   });

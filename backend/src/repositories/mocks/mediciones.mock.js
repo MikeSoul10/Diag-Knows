@@ -2,12 +2,12 @@
  * Mock en memoria de `mediciones`.
  *
  * Misma interfaz que tendrá `src/repositories/mediciones.repo.js`:
- *   guardarMedicion({ pacienteId, tipo, valor, valor2, unidad, medidaEn }) -> medicion
+ *   guardarMedicion({ pacienteId, tipo, valor, valor2, unidad, medidaEn, esCritica, mensajeId }) -> medicion
  *   listarPorPaciente(pacienteId) -> mediciones
  *   __reset()
  *
  * Contrato del DTO (idéntico al que debe devolver el repo real):
- *   { id, pacienteId, tipo, valor, valor2, unidad, esCritica, medidaEn }
+ *   { id, pacienteId, tipo, valor, valor2, unidad, esCritica, medidaEn, mensajeId }
  *
  * `tipo` viaja en el vocabulario de la app ('glucosa' | 'presion' | 'peso'); el
  * repo real lo mapea a las columnas de PostgreSQL ('GLUCOSA',
@@ -15,8 +15,8 @@
  * `pgp_sym_encrypt(..., 'cipher-algo=aes256')` en `valor_cifrado`; aquí vive
  * solo en memoria y NUNCA se escribe en logs.
  *
- * `esCritica` siempre FALSE: los umbrales clínicos siguen en `null`
- * (`config/thresholds.js`) y las alertas son del Sprint 4.
+ * `esCritica` llega del servicio, calculado con `config/thresholds.js`; mientras
+ * los umbrales clínicos sigan en `null` siempre es FALSE.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -54,6 +54,7 @@ function comoDTO(fila) {
     unidad: fila.unidad,
     esCritica: fila.esCritica,
     medidaEn: fila.medidaEn,
+    mensajeId: fila.mensajeId,
   };
 }
 
@@ -64,6 +65,8 @@ export async function guardarMedicion({
   valor2 = null,
   unidad,
   medidaEn,
+  esCritica = false,
+  mensajeId = null,
 } = {}) {
   const idPaciente = validarPacienteId(pacienteId);
 
@@ -78,9 +81,10 @@ export async function guardarMedicion({
     valor: validarNumero(valor, 'valor'),
     valor2: tipo === 'presion' ? validarNumero(valor2, 'valor2') : null,
     unidad: unidad ? String(unidad) : UNIDADES[tipo],
-    // Pendiente de umbrales clínicos validados (Sprint 4).
-    esCritica: false,
+    // Lo decide el servicio con config/thresholds.js (false mientras sean null).
+    esCritica: esCritica === true,
     medidaEn: medidaEn ? new Date(medidaEn).toISOString() : new Date().toISOString(),
+    mensajeId: mensajeId ? String(mensajeId) : null,
   };
 
   if (!porPaciente.has(idPaciente)) porPaciente.set(idPaciente, []);
@@ -92,6 +96,24 @@ export async function guardarMedicion({
 export async function listarPorPaciente(pacienteId) {
   const filas = porPaciente.get(validarPacienteId(pacienteId)) ?? [];
   return filas.map(comoDTO);
+}
+
+/** Filas con `medidaEn` en [desde, hasta), para el historial (DK-301). */
+export async function listarPorRango(pacienteId, desde, hasta) {
+  const inicio = new Date(desde).getTime();
+  const fin = new Date(hasta).getTime();
+  return (await listarPorPaciente(pacienteId)).filter((fila) => {
+    const momento = new Date(fila.medidaEn).getTime();
+    return momento >= inicio && momento < fin;
+  });
+}
+
+/** Borra todas las filas del paciente (`/borrar_datos`, DK-303). Devuelve cuántas. */
+export async function eliminarPorPaciente(pacienteId) {
+  const clave = String(pacienteId ?? '');
+  const cantidad = porPaciente.get(clave)?.length ?? 0;
+  porPaciente.delete(clave);
+  return cantidad;
 }
 
 export function __reset() {

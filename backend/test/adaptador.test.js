@@ -21,10 +21,7 @@ import {
   MENSAJE_SOLO_TEXTO,
   tecladoConversacion,
 } from '../src/channel/format.js';
-import {
-  TEXTO_ERROR_CONVERSACION,
-  responderConversacion,
-} from '../src/channel/handlers/render.js';
+import { TEXTO_ERROR_CONVERSACION, responderConversacion } from '../src/channel/handlers/render.js';
 import {
   patients,
   consentimiento,
@@ -32,14 +29,16 @@ import {
   reiniciarRepositorios,
 } from '../src/repositories/index.js';
 import * as registration from '../src/services/registration.service.js';
-import { __reset as reiniciarSesiones, existe as haySesion } from '../src/services/session.store.js';
+import {
+  __reset as reiniciarSesiones,
+  existe as haySesion,
+} from '../src/services/session.store.js';
 
 // Determinista: sin Claude y sin PostgreSQL aunque la máquina tenga las llaves.
 process.env.USE_MOCK_AI = 'true';
 process.env.USE_MOCK_REPOS = 'true';
 
 const CHAT = 800001;
-const OTRO_CHAT = 800002;
 
 // ---------------------------------------------------------------------------
 // Dobles de prueba
@@ -262,7 +261,11 @@ describe('formato de las respuestas', () => {
 
     await responderConversacion(
       ctx,
-      { texto: 'Resumen', editarMensaje: true, botones: [[{ texto: 'Ok', callback: 'conv:ok:x' }]] },
+      {
+        texto: 'Resumen',
+        editarMensaje: true,
+        botones: [[{ texto: 'Ok', callback: 'conv:ok:x' }]],
+      },
       { editar: true }
     );
 
@@ -540,7 +543,12 @@ describe('comandos del menú', () => {
     assert.equal(llamadas.reply.length, 1);
     assert.equal(llamadas.reply[0].extra.parse_mode, 'HTML');
     assert.match(llamadas.reply[0].mensaje, /Cómo te sentiste/);
-    assert.equal(llamadas.reply[0].extra.reply_markup.inline_keyboard[0][0].callback_data.startsWith('conv:skip:'), true);
+    assert.equal(
+      llamadas.reply[0].extra.reply_markup.inline_keyboard[0][0].callback_data.startsWith(
+        'conv:skip:'
+      ),
+      true
+    );
   });
 
   test('/cancelar limpia el registro a medias y la conversación', async () => {
@@ -621,19 +629,19 @@ describe('comandos del menú', () => {
 // ---------------------------------------------------------------------------
 
 describe('menú nativo de Telegram', () => {
-  test('publica los cinco comandos con descripción en español', async () => {
+  test('publica los ocho comandos con descripción en español', async () => {
     const { bot, telegram } = crearBotFalso();
 
     assert.equal(await publicarComandos(bot), true);
     assert.deepEqual(
       telegram.comandosPublicados.map(({ command }) => command),
-      ['registrar', 'reportar', 'perfil', 'cancelar', 'ayuda']
+      ['registrar', 'reportar', 'tome', 'historial', 'perfil', 'borrar_datos', 'cancelar', 'ayuda']
     );
     for (const comando of telegram.comandosPublicados) {
       assert.ok(comando.description.length > 3);
       assert.ok(comando.description.length <= 256);
     }
-    assert.equal(COMANDOS.length, 5);
+    assert.equal(COMANDOS.length, 8);
   });
 
   test('si Telegram falla, el bot arranca igual', async () => {

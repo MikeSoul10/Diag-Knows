@@ -12,11 +12,17 @@
  * valor, la conversación le pregunta. `nombre` en `null` significa que habló de
  * "la pastilla" sin decir cuál.
  *
+ * Cualquier dato puede traer además `ocurridoEn` (ISO UTC) cuando el paciente
+ * dice cuándo pasó ("ayer en la noche"). Si no lo dice, el campo no aparece y
+ * se guarda con la hora en que confirma (DK-202).
+ *
  * Este módulo NO valida rangos (eso es `validador.js`) ni anonimiza (el texto
  * llega ya anonimizado desde `conversacion.js`).
  */
 
+import { extraerDatos } from '../ai/claude.js';
 import { usarIAMock } from '../config/env.js';
+import { formatoLocal, localAUtc, localTextoAIsoUtc, partesEnZona } from './fechas.js';
 
 export const UNIDADES = Object.freeze({
   glucosa: 'mg/dL',
@@ -192,7 +198,13 @@ function medicionesDe(texto) {
 const SINTOMAS = [
   {
     nombre: 'dolor de cabeza',
-    patrones: [/\bdolor de cabeza\b/, /\bme duele la cabeza\b/, /\bcabeza\b/, /\bjaqueca\b/, /\bmigrana\b/],
+    patrones: [
+      /\bdolor de cabeza\b/,
+      /\bme duele la cabeza\b/,
+      /\bcabeza\b/,
+      /\bjaqueca\b/,
+      /\bmigrana\b/,
+    ],
   },
   {
     nombre: 'mareo',
@@ -200,7 +212,13 @@ const SINTOMAS = [
   },
   {
     nombre: 'cansancio',
-    patrones: [/\bcansancio\b/, /\bcansad[oa]\b/, /\bfatiga\b/, /\bsin energia\b/, /\bagotad[oa]\b/],
+    patrones: [
+      /\bcansancio\b/,
+      /\bcansad[oa]\b/,
+      /\bfatiga\b/,
+      /\bsin energia\b/,
+      /\bagotad[oa]\b/,
+    ],
   },
   {
     nombre: 'falta de aire',
@@ -232,7 +250,8 @@ const SEVERIDADES = [
   { valor: 2, patron: /\b(?:moderado|moderada|regular)\b/ },
   {
     valor: 3,
-    patron: /\b(?:mucho|mucha|fuerte|fuertes|intenso|intensa|insoportable|grave|severo|severa|terrible)\b/,
+    patron:
+      /\b(?:mucho|mucha|fuerte|fuertes|intenso|intensa|insoportable|grave|severo|severa|terrible)\b/,
   },
 ];
 
@@ -273,41 +292,189 @@ function sintomasDe(texto) {
  * @param {string} texto Mensaje en español (ya anonimizado).
  * @returns {{medicacion: Array<object>, mediciones: Array<object>, sintomas: Array<object>}}
  */
-export function extraerMock(texto) {
+export function extraerMock(texto, { ahora, zonaHoraria } = {}) {
   const normalizado = normalizar(texto);
   if (!normalizado) {
     return { medicacion: [], mediciones: [], sintomas: [] };
   }
 
-  return {
+  const resultado = {
     medicacion: medicacionDe(normalizado),
     mediciones: medicionesDe(normalizado),
     sintomas: sintomasDe(normalizado),
   };
+
+  // El mock aplica el mismo momento a todo el mensaje; Claude lo distingue por dato.
+  const ocurridoEn = ahora && zonaHoraria ? momentoDe(normalizado, ahora, zonaHoraria) : null;
+  return ocurridoEn ? conMomento(resultado, () => ocurridoEn) : resultado;
+}
+
+// ---------------------------------------------------------------------------
+// Momento ("ayer en la noche", "a las 8") — DK-202
+// ---------------------------------------------------------------------------
+
+const DIAS_ATRAS = [
+  { dias: 2, patron: /\b(?:antier|anteayer)\b/ },
+  { dias: 1, patron: /\b(?:ayer|anoche)\b/ },
+];
+
+const PARTES_DEL_DIA = [
+  { hora: 21, patron: /\b(?:anoche|(?:en|por|de) la noche|esta noche)\b/ },
+  { hora: 16, patron: /\b(?:(?:en|por|de) la tarde|esta tarde)\b/ },
+  { hora: 13, patron: /\b(?:al )?mediodia\b/ },
+  { hora: 9, patron: /\b(?:(?:en|por|de) la manana|esta manana|temprano)\b/ },
+  { hora: 3, patron: /\b(?:en|por|de) la madrugada\b/ },
+];
+
+const HORA_EXPLICITA =
+  /\ba las? (\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.|de la manana|de la tarde|de la noche)?/;
+
+/** Hora usada cuando dice el día ("ayer") pero no la hora. */
+const HORA_POR_DEFECTO = 12;
+
+function horaExplicita(texto) {
+  const coincidencia = HORA_EXPLICITA.exec(texto);
+  if (!coincidencia) return null;
+
+  let hora = Number(coincidencia[1]);
+  const minuto = Number(coincidencia[2] ?? 0);
+  const sufijo = coincidencia[3] ?? '';
+  if (hora > 23 || minuto > 59) return null;
+
+  if (/^(?:pm|p\.m\.|de la tarde|de la noche)$/.test(sufijo) && hora < 12) hora += 12;
+  if (/^(?:am|a\.m\.|de la manana)$/.test(sufijo) && hora === 12) hora = 0;
+  return { hora, minuto };
 }
 
 /**
- * Extracción real con la Claude API (DK-201). Todavía no implementada.
+ * Instante (ISO UTC) que el mensaje describe, o `null` si no dice cuándo
+ * (entonces se usa la hora en que el paciente confirma).
+ */
+function momentoDe(texto, ahora, zona) {
+  const dias = DIAS_ATRAS.find(({ patron }) => patron.test(texto))?.dias ?? 0;
+  const parte = PARTES_DEL_DIA.find(({ patron }) => patron.test(texto))?.hora ?? null;
+  const explicita = horaExplicita(texto);
+
+  if (dias === 0 && parte === null && !explicita) return null;
+
+  const hoy = partesEnZona(ahora, zona);
+  return localAUtc(
+    {
+      anio: hoy.anio,
+      mes: hoy.mes,
+      dia: hoy.dia - dias,
+      hora: explicita?.hora ?? parte ?? (dias > 0 ? HORA_POR_DEFECTO : hoy.hora),
+      minuto: explicita?.minuto ?? (parte === null && dias === 0 ? hoy.minuto : 0),
+    },
+    zona
+  ).toISOString();
+}
+
+/** Agrega `ocurridoEn` a cada dato (solo si hay uno; si no, el campo no aparece). */
+function conMomento(resultado, momentoDeItem) {
+  const agregar = (item) => {
+    const ocurridoEn = momentoDeItem(item);
+    return ocurridoEn ? { ...item, ocurridoEn } : item;
+  };
+  return {
+    medicacion: resultado.medicacion.map(agregar),
+    mediciones: resultado.mediciones.map(agregar),
+    sintomas: resultado.sintomas.map(agregar),
+  };
+}
+
+const SEVERIDAD_DE_CLAUDE = Object.freeze({ leve: 1, moderada: 2, fuerte: 3 });
+
+/** Nombre del medicamento como lo da el mock: minúsculas, sin acentos ni genéricos. */
+function nombreDeClaude(nombre) {
+  const limpio = normalizar(nombre);
+  if (!limpio || GENERICAS.has(limpio)) return null;
+  return limpio;
+}
+
+/**
+ * Traduce la respuesta de Claude al contrato del extractor. Las unidades las
+ * pone el código (no el modelo) y `valor2` solo existe en presión, igual que
+ * en el mock. Los rangos los revisa `validador.js` después.
+ */
+function aContrato(datos, zonaHoraria) {
+  const contrato = {
+    medicacion: datos.medicacion.map(({ tomada, nombre, cuando }) => ({
+      tomada,
+      nombre: nombreDeClaude(nombre),
+      cuando,
+    })),
+    mediciones: datos.mediciones.map(({ tipo, valor, valor2, cuando }) =>
+      tipo === 'presion'
+        ? { tipo, valor, valor2, unidad: UNIDADES[tipo], cuando }
+        : { tipo, valor, unidad: UNIDADES[tipo], cuando }
+    ),
+    sintomas: datos.sintomas
+      .map(({ descripcion, severidad, cuando }) => ({
+        // Conserva acentos: un síntoma fuera de la lista se muestra tal cual al paciente.
+        descripcion: String(descripcion).toLowerCase().replace(/\s+/g, ' ').trim(),
+        severidad: severidad === null ? null : SEVERIDAD_DE_CLAUDE[severidad],
+        cuando,
+      }))
+      .filter(({ descripcion }) => descripcion),
+  };
+
+  // "cuando" llega en hora local del paciente; el contrato usa ISO UTC.
+  const momento = ({ cuando }) =>
+    zonaHoraria && cuando ? localTextoAIsoUtc(cuando, zonaHoraria) : null;
+  const conFecha = conMomento(contrato, momento);
+  const sinCuando = ({ cuando, ...resto }) => {
+    void cuando;
+    return resto;
+  };
+  return {
+    medicacion: conFecha.medicacion.map(sinCuando),
+    mediciones: conFecha.mediciones.map(sinCuando),
+    sintomas: conFecha.sintomas.map(sinCuando),
+  };
+}
+
+/**
+ * Extracción real con la Claude API (DK-201).
  *
  * @param {string} texto Mensaje ya anonimizado (sin nombres, teléfonos ni IDs).
- * @returns {Promise<{
- *   medicacion: Array<{ tomada: boolean, nombre: string|null }>,
- *   mediciones: Array<{ tipo: 'glucosa'|'presion'|'peso', valor: number, valor2?: number, unidad: string }>,
- *   sintomas: Array<{ descripcion: string, severidad: 1|2|3|null }>
- * }>}
- * @throws {Error} Siempre, mientras no exista el cliente de Claude.
+ * @param {OpcionesExtraccion & { cliente?: object }} [opciones] `cliente` solo en pruebas.
+ * @returns {Promise<Extraccion>}
+ * @throws {import('../ai/claude.js').ErrorIA} Si Claude falla, declina o no cumple el esquema.
  */
-export async function extraerConClaude(texto) {
-  void texto;
-  throw new Error('No implementado: extraerConClaude (DK-201).');
+export async function extraerConClaude(texto, opciones = {}) {
+  if (!normalizar(texto)) {
+    return { medicacion: [], mediciones: [], sintomas: [] };
+  }
+  const { ahora, zonaHoraria, contexto, cliente } = opciones;
+  const ahoraLocal = ahora && zonaHoraria ? formatoLocal(ahora, zonaHoraria) : null;
+  const datos = await extraerDatos(texto, { cliente, ahoraLocal, zonaHoraria, contexto });
+  return aContrato(datos, zonaHoraria);
 }
+
+/**
+ * @typedef {object} OpcionesExtraccion
+ * @property {Date} [ahora] Momento del mensaje (para "ayer", "en la noche").
+ * @property {string} [zonaHoraria] Zona IANA del paciente.
+ * @property {string[]} [contexto] Mensajes anteriores ya anonimizados (solo Claude los usa).
+ */
+
+/**
+ * @typedef {{
+ *   medicacion: Array<{ tomada: boolean, nombre: string|null, ocurridoEn?: string }>,
+ *   mediciones: Array<{ tipo: 'glucosa'|'presion'|'peso', valor: number, valor2?: number, unidad: string, ocurridoEn?: string }>,
+ *   sintomas: Array<{ descripcion: string, severidad: 1|2|3|null, ocurridoEn?: string }>
+ * }} Extraccion
+ */
 
 /**
  * Punto de entrada del extractor. Elige la implementación según el entorno.
  *
  * @param {string} texto Mensaje ya anonimizado.
+ * @param {OpcionesExtraccion} [opciones]
+ * @returns {Promise<Extraccion>}
  */
-export async function extraer(texto) {
-  if (usarIAMock()) return extraerMock(texto);
-  return extraerConClaude(texto);
+export async function extraer(texto, opciones = {}) {
+  if (usarIAMock()) return extraerMock(texto, opciones);
+  return extraerConClaude(texto, opciones);
 }

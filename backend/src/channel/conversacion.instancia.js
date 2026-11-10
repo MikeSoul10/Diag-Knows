@@ -18,7 +18,10 @@ import {
   sintomas,
   medicamentos,
   dosisLogs,
+  mensajes,
+  transaccion,
 } from '../repositories/index.js';
+import { zonaHorariaPorDefecto } from '../config/env.js';
 import { extraer } from '../services/extractor.js';
 import { anonimizar } from '../services/anonimizador.js';
 import { validarExtraccion } from '../services/validador.js';
@@ -54,7 +57,7 @@ export function crearConversacion({
   registrarError,
 } = {}) {
   return crearServicioConversacion({
-    repos: { patients, mediciones, sintomas, medicamentos, dosisLogs },
+    repos: { patients, mediciones, sintomas, medicamentos, dosisLogs, mensajes, transaccion },
     extractor: { extraer },
     anonimizar,
     validar: validarExtraccion,
@@ -62,6 +65,7 @@ export function crearConversacion({
     ahora,
     generarToken,
     registrarError,
+    zonaHorariaPorDefecto: zonaHorariaPorDefecto(),
   });
 }
 

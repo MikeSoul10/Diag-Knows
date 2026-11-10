@@ -1,7 +1,9 @@
 import { message } from 'telegraf/filters';
 import * as registration from '../../services/registration.service.js';
 import { MENSAJE_SOLO_TEXTO } from '../format.js';
-import { conversacion } from '../conversacion.instancia.js';
+import { conversacion, hayConversacionPendiente } from '../conversacion.instancia.js';
+import { detectarConsultaHistorial } from '../../services/historial.js';
+import { responderHistorial } from './historial.js';
 import {
   ejecutarConversacion,
   recordarConsentimiento,
@@ -44,6 +46,12 @@ export function registrarMensajes(bot, servicio = conversacion) {
 
     if (registration.tieneRegistroEnCurso(ctx.from.id)) {
       return responder(ctx, await registration.procesarTexto(ctx.from.id, texto));
+    }
+
+    // "¿Cómo ha estado mi glucosa esta semana?": solo si no hay un reporte a medias.
+    if (!hayConversacionPendiente(ctx.from.id)) {
+      const consulta = detectarConsultaHistorial(texto);
+      if (consulta) return responderHistorial(ctx, consulta);
     }
 
     const respuesta = await ejecutarConversacion('el mensaje', () =>

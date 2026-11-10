@@ -67,6 +67,11 @@ export async function asignar({ pacienteId, enfermedadId, diagnosticadaEn = null
   return { pacienteId: clave, enfermedadId: enfermedad.id, diagnosticadaEn };
 }
 
+/** Borra las enfermedades asignadas al paciente (`/borrar_datos`, DK-303). */
+export async function eliminarPorPaciente(pacienteId) {
+  return asignaciones.delete(String(pacienteId ?? ''));
+}
+
 export function __reset() {
   asignaciones = new Map();
 }

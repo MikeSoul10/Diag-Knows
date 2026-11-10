@@ -9,9 +9,7 @@ function extraer(mediciones = [], sintomas = [], medicacion = []) {
 
 describe('validador: mediciones', () => {
   test('acepta una glucosa normal', () => {
-    const { validos, rechazados } = extraer([
-      { tipo: 'glucosa', valor: 115, unidad: 'mg/dL' },
-    ]);
+    const { validos, rechazados } = extraer([{ tipo: 'glucosa', valor: 115, unidad: 'mg/dL' }]);
 
     assert.deepEqual(validos.mediciones, [{ tipo: 'glucosa', valor: 115, unidad: 'mg/dL' }]);
     assert.deepEqual(rechazados, []);
@@ -31,9 +29,7 @@ describe('validador: mediciones', () => {
   });
 
   test('acepta una presión completa', () => {
-    const { validos, rechazados } = extraer([
-      { tipo: 'presion', valor: 120, valor2: 80 },
-    ]);
+    const { validos, rechazados } = extraer([{ tipo: 'presion', valor: 120, valor2: 80 }]);
 
     assert.deepEqual(validos.mediciones, [
       { tipo: 'presion', valor: 120, valor2: 80, unidad: 'mmHg' },

@@ -10,7 +10,7 @@
  *   __reset()
  *
  * Contrato del DTO (idéntico al que debe devolver el repo real):
- *   { id, telegramChatId, alias, anioNacimiento, estado, creadoEn, consentimientoVigente }
+ *   { id, telegramChatId, alias, anioNacimiento, estado, creadoEn, zonaHoraria, consentimientoVigente }
  *
  * `telegramChatId` SIEMPRE se expone como string: en PostgreSQL la columna es
  * BIGINT y `pg` la entrega como string; normalizarla aquí evita que los
@@ -42,6 +42,7 @@ async function comoDTO(fila) {
     anioNacimiento: fila.anioNacimiento,
     estado: fila.estado,
     creadoEn: fila.creadoEn,
+    zonaHoraria: fila.zonaHoraria,
     consentimientoVigente: await consentimiento.vigente(fila.id),
   };
 }
@@ -59,6 +60,8 @@ export async function findOrCreate(telegramChatId) {
       anioNacimiento: null,
       estado: 'ACTIVO',
       creadoEn: new Date().toISOString(),
+      // Mismo DEFAULT que la columna de la migración 005.
+      zonaHoraria: 'America/Mexico_City',
     };
     porChatId.set(clave, fila);
     porId.set(fila.id, fila);
@@ -96,6 +99,15 @@ export async function setEstado(id, estado) {
 
   fila.estado = estado;
   return comoDTO(fila);
+}
+
+/** Borra al paciente (`/borrar_datos`, DK-303). Devuelve si existía. */
+export async function eliminar(id) {
+  const fila = porId.get(String(id ?? ''));
+  if (!fila) return false;
+  porId.delete(fila.id);
+  porChatId.delete(String(fila.telegramChatId));
+  return true;
 }
 
 export function __reset() {

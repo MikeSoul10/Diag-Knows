@@ -1,11 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  AVISO_PRIVACIDAD,
-  escaparHtml,
-  tecladoEnfermedades,
-} from '../src/channel/format.js';
+import { AVISO_PRIVACIDAD, escaparHtml, tecladoEnfermedades } from '../src/channel/format.js';
 import { catalogoEnfermedades } from '../src/services/registration.service.js';
 
 test('escaparHtml neutraliza los caracteres que rompen el parseo de Telegram', () => {
