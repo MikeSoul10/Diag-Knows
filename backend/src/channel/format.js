@@ -18,6 +18,7 @@ export const AVISO_PRIVACIDAD = [
   'Soy un asistente para dar seguimiento a tu enfermedad crónica: guardo tus síntomas, medicación y mediciones para que tú y tu equipo de salud puedan ver cómo vas.',
   '',
   '• Solo guardo lo necesario: un apodo, tu año de nacimiento y tu enfermedad. No pido tu nombre completo ni tu dirección.',
+  '• Antes de que aceptes guardo solo tu identificador de chat, para no repetirte este aviso; no registro datos de salud hasta que aceptes.',
   '• Tus datos de salud se guardan cifrados en la base de datos.',
   '• Los chats con bots de Telegram <b>no tienen cifrado de extremo a extremo</b>: Telegram puede verlos.',
   '• Puedes pedir que borre tus datos cuando quieras.',

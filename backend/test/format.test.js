@@ -14,6 +14,11 @@ test('el aviso de privacidad menciona el cifrado de Telegram y la no sustitució
   assert.match(AVISO_PRIVACIDAD, /No sustituyo a tu médico/);
 });
 
+test('el aviso de privacidad explica el registro técnico antes del consentimiento', () => {
+  assert.match(AVISO_PRIVACIDAD, /Antes de que aceptes/);
+  assert.match(AVISO_PRIVACIDAD, /no registro datos de salud hasta que aceptes/);
+});
+
 test('cada callback_data de enfermedad cabe en los 64 bytes de Telegram', async () => {
   const opciones = await catalogoEnfermedades();
   const keyboard = tecladoEnfermedades(opciones);

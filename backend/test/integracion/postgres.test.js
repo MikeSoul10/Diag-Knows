@@ -4,6 +4,8 @@
  * Solo corren si existe TEST_DATABASE_URL; si no, se omiten y `npm test`
  * sigue sin necesitar red ni BD. El nombre de la BD debe contener "test":
  * cada prueba hace TRUNCATE y no queremos borrar una BD real por error.
+ * La guardia (`test/helpers/guardia.js`) rechaza las bases que parezcan de
+ * producción y **falla fuerte** si NODE_ENV=production.
  *
  *   docker compose up -d
  *   TEST_DATABASE_URL=postgres://diag:diag@localhost:5433/asistente_cronicas_test npm test
@@ -12,13 +14,11 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { evaluarGuardia } from '../helpers/guardia.js';
+
 const URL_PRUEBAS = (process.env.TEST_DATABASE_URL || '').trim();
-const nombreBd = URL_PRUEBAS ? new URL(URL_PRUEBAS).pathname.slice(1) : '';
-const omitir = !URL_PRUEBAS
-  ? 'TEST_DATABASE_URL no está definida'
-  : !/test/i.test(nombreBd)
-    ? `la BD "${nombreBd}" no parece de pruebas (su nombre debe contener "test")`
-    : false;
+const guardia = evaluarGuardia(URL_PRUEBAS);
+const omitir = guardia.omitir ? guardia.motivo : false;
 
 if (!omitir) {
   process.env.DATABASE_URL = URL_PRUEBAS;

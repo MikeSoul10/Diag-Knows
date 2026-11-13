@@ -41,6 +41,25 @@ export function usarRepositoriosMock() {
   return !(process.env.DATABASE_URL || '').trim();
 }
 
+/**
+ * Guard de arranque (hallazgo #7): en producción no se permite el modo mock.
+ *
+ * `usarRepositoriosMock()` sigue siendo puro (lo usan las pruebas); esta
+ * validación se hace al arrancar `main.js` para que un despliegue mal
+ * configurado falle de inmediato en vez de "funcionar" en memoria.
+ */
+export function validarEntorno({ env = process.env } = {}) {
+  if (env.NODE_ENV !== 'production') return;
+  if (!(env.DATABASE_URL || '').trim()) {
+    throw new Error(
+      'NODE_ENV=production exige DATABASE_URL: no se permite el modo mock en producción.'
+    );
+  }
+  if ((env.USE_MOCK_REPOS || '').trim().toLowerCase() === 'true') {
+    throw new Error('USE_MOCK_REPOS=true no está permitido con NODE_ENV=production.');
+  }
+}
+
 export function usarIAMock() {
   const forzado = (process.env.USE_MOCK_AI || '').trim().toLowerCase();
   if (forzado === 'true') return true;

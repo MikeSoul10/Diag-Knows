@@ -14,6 +14,7 @@ import {
   puertoHttp,
   usarIAMock,
   usarRepositoriosMock,
+  validarEntorno,
 } from './src/config/env.js';
 import { crearBot, publicarComandos } from './src/channel/bot.js';
 import { crearAppHttp, RUTA_WEBHOOK } from './src/channel/http.js';
@@ -27,6 +28,13 @@ import {
 import { cerrarPool } from './src/db/pool.js';
 
 cargarEntorno();
+
+try {
+  validarEntorno();
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 const modo = modoTelegram();
 if (!['polling', 'webhook'].includes(modo)) {

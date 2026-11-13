@@ -23,7 +23,7 @@ describe('GET /health', () => {
     try {
       const res = await fetch(`${url}/health`);
       assert.equal(res.status, 200);
-      assert.deepEqual(await res.json(), { status: 'ok', db: 'mock' });
+      assert.deepEqual(await res.json(), { status: 'ok' });
       assert.equal(res.headers.get('x-powered-by'), null);
     } finally {
       await cerrar();
@@ -43,7 +43,7 @@ describe('GET /health', () => {
       const res = await fetch(`${url}/health`);
       assert.equal(res.status, 503);
       const texto = await res.text();
-      assert.deepEqual(JSON.parse(texto), { status: 'error', db: 'error' });
+      assert.deepEqual(JSON.parse(texto), { status: 'error' });
       assert.ok(!texto.includes('secreto'));
       assert.equal(errores.length, 1);
     } finally {

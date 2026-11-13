@@ -2,8 +2,8 @@
 --  src/db/seed.sql · Datos FICTICIOS para desarrollo y pruebas
 --
 --  Requiere schema.sql + migraciones aplicadas (`npm run db:migrate`).
---  Se ejecuta con `npm run db:seed`, que se niega a correr con
---  NODE_ENV=production. Nunca sobre la BD del piloto.
+--  Se ejecuta con `npm run db:seed` y solo si NODE_ENV no es `production`
+--  y ALLOW_SEED=true. Nunca sobre la BD del piloto.
 --
 --  Es idempotente: se puede correr varias veces sin duplicar filas.
 --  No inserta mediciones ni síntomas: esos van cifrados con ENCRYPTION_KEY

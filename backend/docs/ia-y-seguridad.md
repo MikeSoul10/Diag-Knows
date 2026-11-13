@@ -89,6 +89,17 @@ Además, `el prompt prohíbe diagnosticar, recetar, ajustar dosis e interpretar 
 - `/borrar_datos` los elimina junto con el paciente (`ON DELETE CASCADE`).
 - Después de aplicar la migración hay que volver a correr `src/db/roles.sql` para que `diag_app` tenga permisos sobre la tabla nueva.
 
+## Consentimiento y registro técnico mínimo (hallazgo #12)
+
+Antes de que la persona acepte el aviso de privacidad ya existe **una fila técnica**, y conviene decirlo con precisión:
+
+- `/start` llama a `registration.iniciar()`, que hace `patients.findOrCreate()`. Ese `INSERT` crea la fila de `pacientes` con **solo** `telegram_chat_id` y los valores por defecto del esquema (`id`, `estado = ACTIVO`, `creado_en`). Nada más.
+- Para qué sirve: mantener el estado de la conversación y no volver a mostrar el aviso en cada `/start`. Es el mínimo para saber que ese chat ya fue atendido.
+- **No** se guarda ningún dato clínico ni de perfil antes del consentimiento: ni alias, ni año de nacimiento, ni enfermedad, ni mediciones, ni síntomas, ni medicamentos. El perfil se escribe únicamente al confirmar el registro (`confirmarRegistro`), y el resto de los datos exige consentimiento vigente en cada operación.
+- Si la persona toca «No acepto», se registra `aceptado = false` en `registros_consentimiento` y no se guarda nada más; el bot no procesa sus mensajes.
+- Borrado: `/borrar_datos` elimina la fila de `pacientes` y, por `ON DELETE CASCADE`, todo lo asociado (incluido el consentimiento). Quien vuelva a escribir `/start` empieza de cero (D11).
+- La decisión está fijada en **D19** de `docs/decisiones.md`. El aviso de privacidad (`AVISO_PRIVACIDAD` en `src/channel/format.js`) menciona este registro técnico.
+
 ## Umbrales clínicos (DK-203)
 
 `src/config/thresholds.js` tiene todos los umbrales en `null`. `esCritica()` devuelve `false` mientras sigan así, y el servicio la usa al guardar cada medición (`es_critica`). Para activarlos, un profesional de la salud debe validar los valores y hay que dejar constancia en `VALIDACION_CLINICA` y en `docs/decisiones.md`.

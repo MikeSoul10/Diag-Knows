@@ -47,17 +47,19 @@ Las columnas del esquema son `TIMESTAMP` sin zona. La conexión fija `timezone=U
 
 ## D9 · Rol de aplicación
 
-`src/db/roles.sql` crea `diag_app`: solo `SELECT/INSERT/UPDATE/DELETE` sobre filas, sin `CREATE`/`DROP`; no puede editar ni borrar la bitácora de consentimiento ni el catálogo de enfermedades. Las migraciones las corre el dueño del esquema.
+`src/db/roles.sql` crea `diag_app`: solo `SELECT/INSERT/UPDATE/DELETE` sobre filas, sin `CREATE`/`DROP`; no tiene `UPDATE` ni `DELETE` directo sobre `registros_consentimiento` ni sobre el catálogo de enfermedades. La bitácora de consentimiento **sí desaparece** cuando se borra al paciente, por el `ON DELETE CASCADE` de D11: el rol no borra la fila, pero la cascada se ejecuta con los privilegios del dueño del esquema. Las migraciones las corre el dueño del esquema.
 
 ## D10 · `/health` siempre activo
 
-Express arranca también en modo polling, para que `curl http://localhost:3000/health` funcione en local. Responde `200 {"status":"ok","db":"ok"}` (`"mock"` en modo memoria) o `503 {"status":"error","db":"error"}`, sin detalles internos. El webhook valida `X-Telegram-Bot-Api-Secret-Token` en tiempo constante y exige `WEBHOOK_SECRET` de 32+ caracteres y `WEBHOOK_DOMAIN` con HTTPS.
+Express arranca también en modo polling, para que `curl http://localhost:3000/health` funcione en local. Responde `200 {"status":"ok"}` o `503 {"status":"error"}`, sin detalles internos: no revela si el adaptador es mock o PostgreSQL, ni mensajes de error, versiones o cadenas de conexión. El webhook valida `X-Telegram-Bot-Api-Secret-Token` en tiempo constante y exige `WEBHOOK_SECRET` de 32+ caracteres y `WEBHOOK_DOMAIN` con HTTPS.
 
 ## D11 · `/borrar_datos` borra al paciente y todo lo suyo (incluido el consentimiento)
 
 `/borrar_datos` pide una confirmación con botones (token de un solo uso, vigente 5 minutos) y, al confirmar, borra la fila de `pacientes`. Por `ON DELETE CASCADE` se van también consentimientos, medicamentos, horarios, tomas, mediciones, síntomas, enfermedades, alertas, resúmenes y citas; además se descartan el alta y el reporte que estuvieran a medias. Quien vuelva a escribir `/start` empieza de cero.
 
-Esto resuelve en el código el hallazgo 2 con la opción "derecho al olvido": `diag_app` no puede borrar la bitácora de consentimiento con un `DELETE` directo, pero sí desaparece al borrar al paciente. Verificado contra PostgreSQL 16 con el rol `diag_app` (el `DELETE` directo da `permission denied`; el `DELETE FROM pacientes` deja 0 filas en `registros_consentimiento`). **Pendiente de que el equipo o el PO lo confirmen:** si se prefiere conservar una constancia anónima del consentimiento, habría que anonimizar al paciente en lugar de borrarlo.
+Esto resuelve en el código el hallazgo 2 con la opción "derecho al olvido": `diag_app` no puede borrar la bitácora de consentimiento con un `DELETE` directo, pero sí desaparece al borrar al paciente. Verificado contra PostgreSQL 16 con el rol `diag_app` (el `DELETE` directo da `permission denied`; el `DELETE FROM pacientes` deja 0 filas en `registros_consentimiento`).
+
+**Decisión del 12 nov 2026:** el PO confirma el derecho al olvido con cascada. No se conserva una constancia anónima del consentimiento; si la persona vuelve, acepta el aviso de nuevo. D9 queda alineada con esta decisión.
 
 El borrado es en una sola sentencia (todo o nada). No se registran datos del paciente en logs.
 
@@ -102,3 +104,13 @@ Por decisión del equipo, la extracción con IA usa la API de **Groq** (`groq-sd
 - **Sin consejos.** «No la tomé» solo anota y remite al médico; nunca sugiere tomarla tarde ni doblar la dosis.
 - **Fuera de esta entrega:** el resumen semanal y las alertas (dependen de los umbrales clínicos, que siguen en `null`), y desactivar o editar un horario desde el bot.
 - No hizo falta migración: el esquema ya tenía `horarios_medicamento`, el estado `PENDIENTE` y el índice único (004).
+
+## D19 · Registro técnico mínimo antes del consentimiento (hallazgo #12)
+
+- **Qué se crea.** Al llegar `/start`, `registration.iniciar()` → `patients.findOrCreate()` inserta la fila de `pacientes` con solo `telegram_chat_id` (más `id`, `estado = ACTIVO` y `creado_en` por defecto). Esa fila existe aunque la persona todavía no haya aceptado el aviso.
+- **Para qué.** Mantener el estado de la conversación y no volver a pedir el aviso en cada `/start`. No se usa para perfil ni para datos clínicos.
+- **Qué NO se guarda.** Antes del consentimiento no se guarda alias, año de nacimiento, enfermedad, medicamentos, mediciones, síntomas ni el texto de los mensajes. El perfil se escribe solo al confirmar el registro y el resto de operaciones exigen consentimiento vigente. Si la persona toca «No acepto», se registra `aceptado = false` y no sigue nada más.
+- **Cómo se borra.** `/borrar_datos` elimina al paciente y la cascada se lleva esa fila y el consentimiento (D11); no queda constancia anónima.
+- **Transparencia.** El aviso de privacidad lo dice y el detalle técnico está en `docs/ia-y-seguridad.md`, sección «Consentimiento y registro técnico mínimo».
+
+
