@@ -654,8 +654,8 @@ describe('comandos del menú', () => {
     assert.equal(markup.resize_keyboard, true);
     assert.deepEqual(markup.keyboard, [
       [BOTONES_MENU.reportar, BOTONES_MENU.tome],
-      [BOTONES_MENU.historial, BOTONES_MENU.perfil],
-      [BOTONES_MENU.ayuda, BOTONES_MENU.cancelar],
+      [BOTONES_MENU.historial, BOTONES_MENU.medicamentos],
+      [BOTONES_MENU.perfil, BOTONES_MENU.ayuda, BOTONES_MENU.cancelar],
     ]);
   });
 
@@ -737,19 +737,29 @@ describe('comandos del menú', () => {
 // ---------------------------------------------------------------------------
 
 describe('menú nativo de Telegram', () => {
-  test('publica los ocho comandos con descripción en español', async () => {
+  test('publica los nueve comandos con descripción en español', async () => {
     const { bot, telegram } = crearBotFalso();
 
     assert.equal(await publicarComandos(bot), true);
     assert.deepEqual(
       telegram.comandosPublicados.map(({ command }) => command),
-      ['registrar', 'reportar', 'tome', 'historial', 'perfil', 'borrar_datos', 'cancelar', 'ayuda']
+      [
+        'registrar',
+        'reportar',
+        'tome',
+        'historial',
+        'medicamentos',
+        'perfil',
+        'borrar_datos',
+        'cancelar',
+        'ayuda',
+      ]
     );
     for (const comando of telegram.comandosPublicados) {
       assert.ok(comando.description.length > 3);
       assert.ok(comando.description.length <= 256);
     }
-    assert.equal(COMANDOS.length, 8);
+    assert.equal(COMANDOS.length, 9);
   });
 
   test('si Telegram falla, el bot arranca igual', async () => {

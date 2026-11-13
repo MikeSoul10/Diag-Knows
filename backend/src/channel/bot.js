@@ -15,6 +15,7 @@ import { registrarMensajes } from './handlers/message.js';
 import { registrarComandoTome } from './handlers/tome.js';
 import { registrarComandoHistorial } from './handlers/historial.js';
 import { registrarComandoBorrado } from './handlers/borrado.js';
+import { registrarMedicamentos } from './handlers/medicamentos.js';
 import { conversacion } from './conversacion.instancia.js';
 
 /**
@@ -27,6 +28,7 @@ export const COMANDOS = Object.freeze([
   { command: 'reportar', description: 'Contar síntomas, mediciones o tomas' },
   { command: 'tome', description: 'Registrar que tomaste tu medicamento' },
   { command: 'historial', description: 'Ver el resumen de tus últimos 7 días' },
+  { command: 'medicamentos', description: 'Tus medicamentos y sus recordatorios' },
   { command: 'perfil', description: 'Ver tus datos guardados' },
   { command: 'borrar_datos', description: 'Borrar todos mis datos' },
   { command: 'cancelar', description: 'Salir de lo que tengas a medias' },
@@ -65,6 +67,7 @@ export function crearBot(servicioConversacion = conversacion) {
   registrarComandoTome(bot);
   registrarComandoHistorial(bot);
   registrarComandoBorrado(bot);
+  registrarMedicamentos(bot);
   registrarCallbacks(bot, servicioConversacion);
   registrarMensajes(bot, servicioConversacion);
 

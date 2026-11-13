@@ -19,6 +19,11 @@ import { crearBot, publicarComandos } from './src/channel/bot.js';
 import { crearAppHttp, RUTA_WEBHOOK } from './src/channel/http.js';
 import { estadoSalud } from './src/services/salud.service.js';
 import { iniciarDepuracionPeriodica } from './src/services/retencion.service.js';
+import { iniciarScheduler } from './src/jobs/scheduler.js';
+import {
+  crearEnviadorRecordatorios,
+  servicioRecordatorios,
+} from './src/channel/handlers/medicamentos.js';
 import { cerrarPool } from './src/db/pool.js';
 
 cargarEntorno();
@@ -65,6 +70,13 @@ await publicarComandos(bot);
 // Borra los mensajes originales con retención vencida (al arrancar y cada 24 h).
 const detenerDepuracion = iniciarDepuracionPeriodica();
 
+// Recordatorios de medicamento (DK-302): cada minuto, y OMITIDA cada 15 min.
+const detenerScheduler = iniciarScheduler({
+  servicio: servicioRecordatorios,
+  enviar: crearEnviadorRecordatorios(bot),
+});
+console.log('Recordatorios de medicamento activos.');
+
 if (modo === 'polling') {
   // launch() no resuelve mientras el bot esté corriendo: no se espera.
   bot.launch().catch((err) => {
@@ -86,6 +98,7 @@ async function apagar(senal) {
     }
   }
   detenerDepuracion();
+  detenerScheduler();
   servidor.close();
   await cerrarPool().catch(() => {});
 }

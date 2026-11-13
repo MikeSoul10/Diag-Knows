@@ -88,4 +88,69 @@ export async function listarPorRango(pacienteId, desde, hasta) {
   return rows.map(comoDTO);
 }
 
+// ---------------------------------------------------------------------------
+// Recordatorios (DK-302)
+// ---------------------------------------------------------------------------
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Crea la dosis PENDIENTE de un recordatorio. Devuelve null si ya existía una
+ * para ese horario y momento (índice único parcial de la migración 004): así
+ * dos vueltas del cron nunca mandan dos veces el mismo recordatorio.
+ */
+export async function crearPendiente({ pacienteId, horarioId, medicamentoId, programadaEn } = {}) {
+  if (!horarioId) throw new Error('horarioId es obligatorio');
+  const momento = aIsoUtc(programadaEn);
+  if (!momento) throw new Error('programadaEn es obligatorio');
+
+  const { rows } = await query(
+    `INSERT INTO registros_dosis (paciente_id, horario_id, medicamento_id, programada_en, estado)
+     VALUES ($1, $2, $3, $4::timestamp, 'PENDIENTE')
+     ON CONFLICT (horario_id, programada_en) WHERE horario_id IS NOT NULL DO NOTHING
+     RETURNING ${COLUMNAS}`,
+    [
+      validarPacienteId(pacienteId),
+      String(horarioId),
+      medicamentoId ? String(medicamentoId) : null,
+      momento,
+    ]
+  );
+  return rows[0] ? comoDTO(rows[0]) : null;
+}
+
+/**
+ * Respuesta del paciente al recordatorio. Acepta una dosis PENDIENTE u
+ * OMITIDA (contestó tarde) que sea suya; si no, devuelve null.
+ */
+export async function responderPendiente({ registroId, pacienteId, tomada, respondidaEn } = {}) {
+  if (typeof registroId !== 'string' || !UUID_RE.test(registroId)) return null;
+  if (typeof tomada !== 'boolean') throw new Error('tomada debe ser booleano');
+
+  const { rows } = await query(
+    `UPDATE registros_dosis
+        SET estado = CASE WHEN $3 THEN 'TOMADA' ELSE 'SALTADA' END,
+            tomada_en = CASE WHEN $3 THEN $4::timestamp END
+      WHERE id = $1 AND paciente_id = $2 AND estado IN ('PENDIENTE', 'OMITIDA')
+      RETURNING ${COLUMNAS}`,
+    [
+      registroId,
+      validarPacienteId(pacienteId),
+      tomada,
+      aIsoUtc(respondidaEn) ?? new Date().toISOString(),
+    ]
+  );
+  return rows[0] ? comoDTO(rows[0]) : null;
+}
+
+/** Marca OMITIDA toda dosis PENDIENTE programada antes de `limite`. Devuelve cuántas. */
+export async function marcarOmitidas(limite) {
+  const { rowCount } = await query(
+    `UPDATE registros_dosis SET estado = 'OMITIDA'
+      WHERE estado = 'PENDIENTE' AND programada_en < $1::timestamp`,
+    [aIsoUtc(limite)]
+  );
+  return rowCount;
+}
+
 export function __reset() {}

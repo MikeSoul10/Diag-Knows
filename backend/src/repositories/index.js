@@ -31,6 +31,7 @@ import * as medicamentosMock from './mocks/medicamentos.mock.js';
 import * as dosisLogsMock from './mocks/dosisLogs.mock.js';
 import * as saludMock from './mocks/salud.mock.js';
 import * as mensajesMock from './mocks/mensajes.mock.js';
+import * as horariosMock from './mocks/horarios.mock.js';
 
 import * as patientsReal from './patients.repo.js';
 import * as consentimientoReal from './consentimiento.repo.js';
@@ -41,6 +42,7 @@ import * as medicamentosReal from './medicamentos.repo.js';
 import * as dosisLogsReal from './dosisLogs.repo.js';
 import * as saludReal from './salud.repo.js';
 import * as mensajesReal from './mensajes.repo.js';
+import * as horariosReal from './horarios.repo.js';
 
 /**
  * Fachada que delega cada función al mock o al repo real según el modo vigente.
@@ -76,6 +78,7 @@ export const medicamentos = elegir(medicamentosMock, medicamentosReal);
 export const dosisLogs = elegir(dosisLogsMock, dosisLogsReal);
 export const salud = elegir(saludMock, saludReal);
 export const mensajes = elegir(mensajesMock, mensajesReal);
+export const horarios = elegir(horariosMock, horariosReal);
 
 /**
  * Ejecuta `fn()` de forma atómica: en PostgreSQL, todas las llamadas a los
@@ -103,6 +106,8 @@ export function eliminarPaciente(pacienteId) {
         enfermedadesMock,
         medicionesMock,
         sintomasMock,
+        // Los horarios se ubican por sus medicamentos: van antes de borrarlos.
+        horariosMock,
         medicamentosMock,
         dosisLogsMock,
         mensajesMock,
@@ -124,4 +129,5 @@ export function reiniciarRepositorios() {
   medicamentos.__reset();
   dosisLogs.__reset();
   mensajes.__reset();
+  horarios.__reset();
 }

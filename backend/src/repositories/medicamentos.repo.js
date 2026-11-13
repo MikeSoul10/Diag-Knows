@@ -54,6 +54,15 @@ export async function listarPorPaciente(pacienteId) {
   return rows.map(comoDTO);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Medicamento por id (cualquier paciente) o null. */
+export async function obtener(id) {
+  if (typeof id !== 'string' || !UUID_RE.test(id)) return null;
+  const { rows } = await query(`SELECT ${COLUMNAS} FROM medicamentos WHERE id = $1`, [id]);
+  return rows[0] ? comoDTO(rows[0]) : null;
+}
+
 /**
  * Busca por nombre sin distinguir mayúsculas ni acentos; tolera que el
  * paciente diga solo una parte ("metformina" para "Metformina 850 mg").

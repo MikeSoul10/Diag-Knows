@@ -36,6 +36,7 @@ export const BOTONES_MENU = Object.freeze({
   reportar: '📝 Reportar',
   tome: '💊 Ya me la tomé',
   historial: '📊 Historial',
+  medicamentos: '⏰ Mis medicamentos',
   perfil: '👤 Mi perfil',
   ayuda: '❓ Ayuda',
   cancelar: '✖️ Cancelar',
@@ -49,6 +50,7 @@ export const AYUDA = [
   `${BOTONES_MENU.reportar}: contarme síntomas, mediciones o tomas (/reportar)`,
   `${BOTONES_MENU.tome}: registrar tu medicamento al momento (/tome)`,
   `${BOTONES_MENU.historial}: tus últimos 7 días (/historial)`,
+  `${BOTONES_MENU.medicamentos}: tus medicamentos y sus recordatorios (/medicamentos)`,
   `${BOTONES_MENU.perfil}: tus datos guardados (/perfil)`,
   `${BOTONES_MENU.cancelar}: salir de lo que tengas a medias (/cancelar)`,
   '',
@@ -99,8 +101,8 @@ export function tecladoConfirmar() {
 export function tecladoMenu() {
   return Markup.keyboard([
     [BOTONES_MENU.reportar, BOTONES_MENU.tome],
-    [BOTONES_MENU.historial, BOTONES_MENU.perfil],
-    [BOTONES_MENU.ayuda, BOTONES_MENU.cancelar],
+    [BOTONES_MENU.historial, BOTONES_MENU.medicamentos],
+    [BOTONES_MENU.perfil, BOTONES_MENU.ayuda, BOTONES_MENU.cancelar],
   ])
     .resize()
     .persistent()
