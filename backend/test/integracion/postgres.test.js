@@ -618,4 +618,117 @@ describe('PostgreSQL (integración)', { skip: omitir }, () => {
       assert.equal(m.esCritica, true);
     });
   });
+
+  describe('DK-302: medicamentos, horarios y recordatorios en PostgreSQL', () => {
+    async function pacienteListo(chat) {
+      await registration.iniciar(chat);
+      await registration.aceptarConsentimiento(chat);
+      return repos.patients.findByTelegramChatId(chat);
+    }
+
+    /** 08:00 en Ciudad de México (UTC-6) del día de hoy en UTC. */
+    function ochoDeHoy() {
+      const hoy = new Date();
+      return new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate(), 14, 0));
+    }
+
+    test('alta por el paciente: medicamento + horarios en una transacción', async () => {
+      const { crearServicioMedicamentos } = await import('../../src/services/medicamentos.js');
+      const servicio = crearServicioMedicamentos();
+      const chat = 555400;
+      const p = await pacienteListo(chat);
+
+      await servicio.iniciarAlta({ chatId: chat });
+      await servicio.procesarTexto({ chatId: chat, texto: 'Metformina' });
+      await servicio.procesarTexto({ chatId: chat, texto: '850 mg' });
+      await servicio.procesarTexto({ chatId: chat, texto: '8 y 20' });
+      await servicio.confirmar({ chatId: chat });
+
+      const horarios = await repos.horarios.listarPorPaciente(p.id);
+      assert.deepEqual(
+        horarios.map((h) => [h.medicamentoNombre, h.horaProgramada]),
+        [
+          ['Metformina', '08:00'],
+          ['Metformina', '20:00'],
+        ]
+      );
+      const [paraRecordar] = await repos.horarios.listarParaRecordatorio();
+      assert.equal(paraRecordar.telegramChatId, String(chat));
+      assert.equal(paraRecordar.zonaHoraria, 'America/Mexico_City');
+    });
+
+    test('recordatorio: una sola dosis PENDIENTE por horario y momento (índice único parcial)', async () => {
+      const { crearServicioRecordatorios } = await import('../../src/services/recordatorios.js');
+      const p = await pacienteListo(555401);
+      const med = await repos.medicamentos.crear({
+        pacienteId: p.id,
+        nombre: 'Losartán',
+        dosis: '50 mg',
+      });
+      await repos.horarios.crear({ medicamentoId: med.id, horaProgramada: '08:00' });
+
+      const servicio = crearServicioRecordatorios({ ahora: () => ochoDeHoy() });
+      const [aviso] = await servicio.pendientesDeEnviar();
+      assert.ok(aviso);
+      assert.equal((await servicio.pendientesDeEnviar()).length, 0);
+
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS n FROM registros_dosis WHERE estado = 'PENDIENTE'"
+      );
+      assert.equal(rows[0].n, 1);
+
+      const respuesta = await servicio.responder({
+        chatId: 555401,
+        registroId: aviso.registroId,
+        tomada: true,
+      });
+      assert.match(respuesta.texto, /ya tomaste/);
+      const [dosis] = await repos.dosisLogs.listarPorPaciente(p.id);
+      assert.equal(dosis.estado, 'TOMADA');
+    });
+
+    test('sin respuesta queda OMITIDA y una respuesta tardía la corrige', async () => {
+      const p = await pacienteListo(555402);
+      const med = await repos.medicamentos.crear({ pacienteId: p.id, nombre: 'Metformina' });
+      const horario = await repos.horarios.crear({
+        medicamentoId: med.id,
+        horaProgramada: '08:00',
+      });
+      const pendiente = await repos.dosisLogs.crearPendiente({
+        pacienteId: p.id,
+        horarioId: horario.id,
+        medicamentoId: med.id,
+        programadaEn: '2026-11-12T14:00:00Z',
+      });
+
+      assert.equal(await repos.dosisLogs.marcarOmitidas('2026-11-12T13:00:00Z'), 0);
+      assert.equal(await repos.dosisLogs.marcarOmitidas('2026-11-12T16:01:00Z'), 1);
+
+      const tarde = await repos.dosisLogs.responderPendiente({
+        registroId: pendiente.id,
+        pacienteId: p.id,
+        tomada: false,
+      });
+      assert.equal(tarde.estado, 'SALTADA');
+
+      // Un id ajeno o mal formado no toca nada.
+      assert.equal(
+        await repos.dosisLogs.responderPendiente({
+          registroId: 'no-es-uuid',
+          pacienteId: p.id,
+          tomada: true,
+        }),
+        null
+      );
+    });
+
+    test('sin consentimiento vigente el horario no se recuerda', async () => {
+      const p = await pacienteListo(555403);
+      const med = await repos.medicamentos.crear({ pacienteId: p.id, nombre: 'Metformina' });
+      await repos.horarios.crear({ medicamentoId: med.id, horaProgramada: '08:00' });
+      await registration.rechazarConsentimiento(555403);
+
+      assert.deepEqual(await repos.horarios.listarParaRecordatorio(), []);
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import * as registration from '../../services/registration.service.js';
+import { servicioMedicamentos } from '../../services/medicamentos.js';
 import {
   AYUDA,
   BOTONES_MENU,
@@ -70,8 +71,9 @@ export function registrarMenu(bot, servicio = conversacion) {
   });
 
   alComandoYBoton(bot, 'cancelar', BOTONES_MENU.cancelar, async (ctx) => {
-    // Se descartan las dos cosas: el alta a medias y lo que estuviera reportando.
+    // Se descarta todo lo que hubiera a medias: el alta, el medicamento y el reporte.
     const registroEnCurso = await registration.cancelarRegistro(ctx.from.id);
+    const medicamentoEnCurso = servicioMedicamentos.cancelar({ chatId: ctx.from.id });
     const reportePendiente = hayConversacionPendiente(ctx.from.id);
 
     const respuesta = await ejecutarConversacion('el comando /cancelar', () =>
@@ -79,7 +81,7 @@ export function registrarMenu(bot, servicio = conversacion) {
     );
     if (respuesta?.error) return ctx.reply(respuesta.texto);
 
-    const habia = registroEnCurso || reportePendiente;
+    const habia = registroEnCurso || medicamentoEnCurso || reportePendiente;
 
     // Vuelve el menú principal (por si la barra mostraba los síntomas de /reportar).
     return ctx.reply(

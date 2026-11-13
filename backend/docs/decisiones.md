@@ -91,3 +91,14 @@ Por decisión del equipo, la extracción con IA usa la API de **Groq** (`groq-sd
 - **Petición:** `response_format: json_schema` estricto, `reasoning_effort: low`, `include_reasoning: false` y `max_completion_tokens: 4000`. Si la respuesta se corta (`finish_reason: length`) o no cumple el esquema, se reintenta una vez con un mensaje de corrección.
 - **Privacidad:** Groq también es un proveedor externo, así que la regla de anonimizar antes de llamar a la IA aplica igual. Conviene que el equipo revise la política de retención de datos de Groq antes del piloto.
 - El agente `.claude/agents/integracion-claude.md` conserva su nombre, pero ahora le toca este cliente.
+
+## D18 · Recordatorios de medicamento (DK-302)
+
+- **Alta por el propio paciente**, no por un administrador. Decisión del equipo del 12 nov: es más simple de usar y de demostrar. El paciente toca «⏰ Mis medicamentos» (o escribe /medicamentos) y da nombre → dosis → hora(s) → confirma. Se pueden dar hasta 4 horas por medicamento («8 y 20», «8 de la noche», «mediodía»). Nada se guarda sin confirmar. El rol de administrador (`ADMIN_TELEGRAM_IDS`, tabla `administradores`) queda para después.
+- **Horas en la zona del paciente.** `horarios_medicamento.hora_programada` es hora local (`pacientes.zona_horaria`). El cron corre cada minuto y el servicio calcula cuál toca en la zona de cada paciente, así que no depende de `TZ` del servidor.
+- **Un solo recordatorio por toma.** Al enviarlo se crea la dosis `PENDIENTE`. El índice único parcial `(horario_id, programada_en)` de la migración 004 impide duplicados aunque el cron corra dos veces o el bot se reinicie.
+- **Ventana de 10 minutos.** Si el bot estuvo caído menos de 10 minutos, el recordatorio todavía sale. Si fue más tiempo, no se manda tarde y esa toma termina como `OMITIDA`.
+- **OMITIDA a las 2 horas.** Cada 15 minutos se marca `OMITIDA` toda dosis `PENDIENTE` con más de 2 h. Si el paciente contesta después, se corrige a `TOMADA` o `SALTADA`.
+- **Sin consejos.** «No la tomé» solo anota y remite al médico; nunca sugiere tomarla tarde ni doblar la dosis.
+- **Fuera de esta entrega:** el resumen semanal y las alertas (dependen de los umbrales clínicos, que siguen en `null`), y desactivar o editar un horario desde el bot.
+- No hizo falta migración: el esquema ya tenía `horarios_medicamento`, el estado `PENDIENTE` y el índice único (004).

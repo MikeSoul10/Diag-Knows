@@ -35,7 +35,8 @@ function comoDTO(fila) {
     medicamentoId: fila.medicamentoId,
     nombreReportado: fila.nombreReportado,
     estado: fila.estado,
-    tomadaEn: fila.tomadaEn,
+    // Igual que el repo real: sin toma (PENDIENTE, SALTADA, OMITIDA) se expone el momento programado.
+    tomadaEn: fila.tomadaEn ?? fila.programadaEn,
     mensajeId: fila.mensajeId,
   };
 }
@@ -94,6 +95,66 @@ export async function eliminarPorPaciente(pacienteId) {
   const cantidad = porPaciente.get(clave)?.length ?? 0;
   porPaciente.delete(clave);
   return cantidad;
+}
+
+// ---------------------------------------------------------------------------
+// Recordatorios (DK-302) — misma semántica que dosisLogs.repo.js
+// ---------------------------------------------------------------------------
+
+function todasLasFilas() {
+  return [...porPaciente.values()].flat();
+}
+
+export async function crearPendiente({ pacienteId, horarioId, medicamentoId, programadaEn } = {}) {
+  const idPaciente = validarPacienteId(pacienteId);
+  if (!horarioId) throw new Error('horarioId es obligatorio');
+  if (!programadaEn) throw new Error('programadaEn es obligatorio');
+  const momento = new Date(programadaEn).toISOString();
+
+  // Índice único parcial (horario_id, programada_en) de la migración 004.
+  const repetida = todasLasFilas().some(
+    (fila) => fila.horarioId === String(horarioId) && fila.programadaEn === momento
+  );
+  if (repetida) return null;
+
+  const fila = {
+    id: randomUUID(),
+    pacienteId: idPaciente,
+    horarioId: String(horarioId),
+    medicamentoId: medicamentoId ? String(medicamentoId) : null,
+    nombreReportado: null,
+    estado: 'PENDIENTE',
+    programadaEn: momento,
+    tomadaEn: null,
+    mensajeId: null,
+  };
+  if (!porPaciente.has(idPaciente)) porPaciente.set(idPaciente, []);
+  porPaciente.get(idPaciente).push(fila);
+  return comoDTO(fila);
+}
+
+export async function responderPendiente({ registroId, pacienteId, tomada, respondidaEn } = {}) {
+  if (typeof tomada !== 'boolean') throw new Error('tomada debe ser booleano');
+  const fila = (porPaciente.get(String(pacienteId ?? '')) ?? []).find(
+    (item) => item.id === String(registroId ?? '')
+  );
+  if (!fila || !['PENDIENTE', 'OMITIDA'].includes(fila.estado)) return null;
+
+  fila.estado = tomada ? 'TOMADA' : 'SALTADA';
+  fila.tomadaEn = tomada ? new Date(respondidaEn ?? Date.now()).toISOString() : null;
+  return comoDTO(fila);
+}
+
+export async function marcarOmitidas(limite) {
+  const corte = new Date(limite).getTime();
+  let marcadas = 0;
+  for (const fila of todasLasFilas()) {
+    if (fila.estado === 'PENDIENTE' && new Date(fila.programadaEn).getTime() < corte) {
+      fila.estado = 'OMITIDA';
+      marcadas += 1;
+    }
+  }
+  return marcadas;
 }
 
 export function __reset() {

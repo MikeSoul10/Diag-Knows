@@ -61,6 +61,15 @@ export async function listarPorPaciente(pacienteId) {
   return filas.map(comoDTO);
 }
 
+/** Medicamento por id (cualquier paciente) o null. */
+export async function obtener(id) {
+  for (const filas of porPaciente.values()) {
+    const fila = filas.find((item) => item.id === String(id ?? ''));
+    if (fila) return comoDTO(fila);
+  }
+  return null;
+}
+
 /**
  * Busca el medicamento del paciente por nombre, sin distinguir mayúsculas ni
  * acentos. Tolera que el paciente diga solo una parte ("metformina" para
