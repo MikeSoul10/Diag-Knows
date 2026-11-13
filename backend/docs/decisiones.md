@@ -61,7 +61,7 @@ Esto resuelve en el código el hallazgo 2 con la opción "derecho al olvido": `d
 
 El borrado es en una sola sentencia (todo o nada). No se registran datos del paciente en logs.
 
-## D12 · Cliente de Claude en `src/ai/claude.js` (DK-201)
+## D12 · Cliente de Claude en `src/ai/claude.js` (DK-201) — reemplazado por D17
 
 El criterio de DK-201 pide `services/claude.js`. Se siguió `AGENTS.md` §4, que pone el cliente en `src/ai/`; `services/extractor.js` lo usa. La salida se pide con structured outputs y se valida con Zod en Node, no con `messages.parse()`, porque los errores del SDK incluyen fragmentos de la respuesta (datos clínicos) y podrían terminar en logs. Si Claude falla o declina, el paciente recibe «No pude interpretar tu mensaje…»; **no** se cae al extractor por regex en silencio. El equipo puede cambiarlo si lo prefiere. No se activó el fallback del servidor para rechazos (`fallbacks`): con `claude-sonnet-5-5` solo cubre categorías como ciberseguridad, que no aplican a este bot. Detalle en `docs/ia-y-seguridad.md`.
 
@@ -75,9 +75,19 @@ Para la trazabilidad se guarda el texto **anonimizado** (no el original con nomb
 
 ## D15 · Contexto de conversación solo en memoria
 
-Los «últimos N mensajes» de la tarea técnica del Sprint 2 son los 5 más recientes por chat, anonimizados, en memoria y con caducidad de 30 minutos. Solo los usa Claude como contexto y se le pide extraer únicamente del mensaje actual, para no registrar dos veces lo mismo. Se olvidan al confirmar, con `/cancelar` y con `/borrar_datos`.
+Los «últimos N mensajes» de la tarea técnica del Sprint 2 son los 5 más recientes por chat, anonimizados, en memoria y con caducidad de 30 minutos. Solo los usa la IA real como contexto y se le pide extraer únicamente del mensaje actual, para no registrar dos veces lo mismo. Se olvidan al confirmar, con `/cancelar` y con `/borrar_datos`.
 
 ## D16 · `es_critica` calculada por el servicio (DK-203)
 
 `src/config/thresholds.js` existe con todos los umbrales en `null` y `esCritica()` devuelve `false` mientras sigan así. La conversación la calcula al guardar cada medición y los repositorios ya no fijan `FALSE` por su cuenta. **Pendiente del equipo:** definir qué profesional de la salud valida los umbrales y registrarlo en `VALIDACION_CLINICA`.
 
+
+## D17 · La IA cambia de Claude a Groq (12 nov 2026)
+
+Por decisión del equipo, la extracción con IA usa la API de **Groq** (`groq-sdk`) en lugar de la de Claude. Cambia solo el cliente: `src/ai/claude.js` se reemplazó por `src/ai/groq.js`, con la misma función `extraerDatos()` y el mismo esquema Zod. El prompt, la anonimización, el validador, la confirmación y las pruebas de seguridad de DK-205 siguen igual.
+
+- **Variables:** `GROQ_API_KEY` y `GROQ_MODEL` reemplazan a `ANTHROPIC_API_KEY` y `ANTHROPIC_MODEL`. Sin `GROQ_API_KEY` el bot usa el extractor por regex, como antes.
+- **Modelo:** `openai/gpt-oss-20b` por defecto. Se eligió porque Groq solo garantiza el esquema (Structured Outputs con `strict: true`) en algunos modelos, y ese es el más barato y rápido de ellos. `openai/gpt-oss-120b` también sirve.
+- **Petición:** `response_format: json_schema` estricto, `reasoning_effort: low`, `include_reasoning: false` y `max_completion_tokens: 4000`. Si la respuesta se corta (`finish_reason: length`) o no cumple el esquema, se reintenta una vez con un mensaje de corrección.
+- **Privacidad:** Groq también es un proveedor externo, así que la regla de anonimizar antes de llamar a la IA aplica igual. Conviene que el equipo revise la política de retención de datos de Groq antes del piloto.
+- El agente `.claude/agents/integracion-claude.md` conserva su nombre, pero ahora le toca este cliente.

@@ -1,6 +1,7 @@
 import * as registration from '../../services/registration.service.js';
 import { conversacion } from '../conversacion.instancia.js';
-import { atenderCallback, responder } from './render.js';
+import { tecladoConfirmar } from '../format.js';
+import { atenderCallback, mostrarMenu, responder } from './render.js';
 
 /**
  * Botones en línea:
@@ -84,9 +85,10 @@ export function registrarCallbacks(bot, servicio = conversacion) {
     const [, enfermedadId] = ctx.match;
     await ctx.answerCbQuery();
     const resultado = await registration.elegirEnfermedad(ctx.from.id, enfermedadId);
-    // Se edita el mensaje de la pregunta para que no queden teclados viejos activos.
+    // Se edita el mensaje de la pregunta (así no quedan activos los botones de
+    // las enfermedades) y se le ponen los botones de confirmar el resumen.
     if (resultado.tipo === 'resumen') {
-      return ctx.editMessageText(resultado.mensaje);
+      return ctx.editMessageText(resultado.mensaje, tecladoConfirmar());
     }
     return responder(ctx, resultado);
   });
@@ -96,7 +98,12 @@ export function registrarCallbacks(bot, servicio = conversacion) {
     await ctx.answerCbQuery();
 
     if (resultado.tipo === 'completado') {
-      return ctx.editMessageText(resultado.mensaje);
+      await ctx.editMessageText(resultado.mensaje);
+      // Un mensaje editado no puede llevar el teclado de la barra: va aparte.
+      return mostrarMenu(
+        ctx,
+        'Desde ahora tienes tus opciones en los botones de abajo. También puedes escribirme normal.'
+      );
     }
     return responder(ctx, resultado);
   });

@@ -23,7 +23,7 @@ Bot de Telegram con IA y PostgreSQL para que una persona con enfermedad crónica
 El bot:
 
 1. Pregunta al paciente por síntomas, medicación y mediciones.
-2. Interpreta mensajes libres con la API de Claude y los convierte a JSON estructurado.
+2. Interpreta mensajes libres con la API de Groq y los convierte a JSON estructurado.
 3. **Pide confirmación al paciente antes de guardar** (botones en línea).
 4. Guarda el historial con fecha en PostgreSQL, con datos sensibles cifrados (AES-256).
 5. Envía recordatorios de dosis con botón «Ya la tomé», alertas orientativas y un resumen semanal.
@@ -63,7 +63,7 @@ Panel web para el médico, WhatsApp Business, mensajes de voz/imágenes/archivos
 | Canal | Telegram Bot API vía **Telegraf** (v4) |
 | Backend | Node.js (LTS, ES2022+) + Express (webhook en producción) |
 | BD | PostgreSQL 16+ (driver `pg`) |
-| IA | API de Claude (`@anthropic-ai/sdk`) |
+| IA | API de Groq (`groq-sdk`), modelo con Structured Outputs estrictos (ver `docs/ia-y-seguridad.md`) |
 | Tareas programadas | `node-cron` |
 | Despliegue | Railway o Render (HTTPS) |
 | Control de versiones | Git + GitHub |
@@ -72,7 +72,7 @@ Dependencias iniciales:
 
 ```bash
 npm init -y
-npm i telegraf express pg node-cron dotenv @anthropic-ai/sdk zod
+npm i telegraf express pg node-cron dotenv groq-sdk zod
 npm i -D nodemon
 ```
 
@@ -93,7 +93,7 @@ Telegram (paciente / admin)
 [3] Lógica de negocio ............ registro/consentimiento · extracción IA · recordatorios · alertas/resúmenes
 [4] Acceso a datos y seguridad ... repositorios, consultas parametrizadas, transacciones, cifrado (pgcrypto), pool
 [5] Persistencia ................. PostgreSQL (SSL/TLS, roles restringidos, respaldos)
-                                   ↘ API de Claude (se consulta desde [3], solo texto anonimizado)
+                                   ↘ API de Groq (se consulta desde [3], solo texto anonimizado)
 ```
 
 ### Estructura de carpetas sugerida
@@ -171,8 +171,8 @@ DATABASE_URL=postgres://user:pass@localhost:5432/asistente_cronicas
 DATABASE_SSL=false
 
 # IA
-ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-sonnet-5-5
+GROQ_API_KEY=
+GROQ_MODEL=openai/gpt-oss-20b
 
 # Passphrase para pgp_sym_encrypt / pgp_sym_decrypt (larga y aleatoria). Generar con:
 # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -445,6 +445,8 @@ process.once('SIGTERM', () => bot.stop('SIGTERM'));
 > Si `createWebhook` da problemas con tu versión de Telegraf, la alternativa clásica es `bot.telegram.setWebhook(url, { secret_token })` + `app.use(path, bot.webhookCallback(path))`.
 
 ### 7.5 Anonimización + extracción con IA
+
+> **Nota (12 nov 2026):** el proveedor de IA cambió a **Groq** (D17 en `docs/decisiones.md`). El código vigente está en `src/ai/groq.js` y se describe en `docs/ia-y-seguridad.md`. Los ejemplos de abajo son el boceto original con Claude y se conservan como referencia.
 
 `src/ai/anonymize.js` (mínimo viable; reforzar con pruebas):
 

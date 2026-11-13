@@ -1,7 +1,7 @@
 /**
  * Anonimizador previo a la IA.
  *
- * Regla del proyecto: a Claude solo viaja texto, nunca identificadores. Este
+ * Regla del proyecto: a la IA solo viaja texto, nunca identificadores. Este
  * módulo tapa teléfonos, correos, URLs, números largos y nombres conocidos.
  *
  * Lo que NO toca (a propósito): valores clínicos como `115`, `120/80` o

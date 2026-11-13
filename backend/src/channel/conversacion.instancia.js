@@ -2,11 +2,11 @@
  * Instancia de la conversación de seguimiento para el canal Telegram.
  *
  * Aquí se enchufan las implementaciones concretas: los repositorios de
- * `repositories/index.js`, el extractor (mock o Claude según `.env`), el
+ * `repositories/index.js`, el extractor (mock o Groq según `.env`), el
  * anonimizador y el validador. El servicio (`services/conversacion.js`) recibe
  * todo por inyección y no sabe de dónde viene.
  *
- * Pasar a Claude o a PostgreSQL debe implicar cambiar solo esas dos
+ * Pasar a la IA real o a PostgreSQL debe implicar cambiar solo esas dos
  * implementaciones, no este archivo ni los handlers.
  */
 

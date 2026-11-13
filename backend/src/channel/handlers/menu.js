@@ -1,5 +1,12 @@
 import * as registration from '../../services/registration.service.js';
-import { AYUDA, EXTRA_HTML, escaparHtml, tecladoRegistrar } from '../format.js';
+import {
+  AYUDA,
+  BOTONES_MENU,
+  EXTRA_HTML,
+  escaparHtml,
+  tecladoMenu,
+  tecladoRegistrar,
+} from '../format.js';
 import { conversacion, hayConversacionPendiente } from '../conversacion.instancia.js';
 import {
   ejecutarConversacion,
@@ -8,13 +15,22 @@ import {
   responderConversacion,
 } from './render.js';
 
-/** Comandos: /registrar, /reportar, /perfil, /cancelar, /ayuda. */
+/**
+ * Registra un handler para el comando y, si se indica, para el botón del menú
+ * principal que hace lo mismo (Telegram manda el texto del botón como mensaje).
+ */
+export function alComandoYBoton(bot, comando, boton, handler) {
+  bot.command(comando, handler);
+  if (boton) bot.hears(boton, handler);
+}
+
+/** Comandos y botones del menú: registrar, reportar, perfil, cancelar, ayuda. */
 export function registrarMenu(bot, servicio = conversacion) {
   bot.command('registrar', async (ctx) => {
     return responder(ctx, await registration.iniciarRegistro(ctx.from.id));
   });
 
-  bot.command('reportar', async (ctx) => {
+  alComandoYBoton(bot, 'reportar', BOTONES_MENU.reportar, async (ctx) => {
     const respuesta = await ejecutarConversacion('el comando /reportar', () =>
       servicio.iniciar({ chatId: ctx.from.id })
     );
@@ -22,7 +38,7 @@ export function registrarMenu(bot, servicio = conversacion) {
     return responderConversacion(ctx, respuesta);
   });
 
-  bot.command('perfil', async (ctx) => {
+  alComandoYBoton(bot, 'perfil', BOTONES_MENU.perfil, async (ctx) => {
     const perfil = await registration.obtenerPerfil(ctx.from.id);
     if (!perfil) return recordarConsentimiento(ctx);
 
@@ -49,11 +65,11 @@ export function registrarMenu(bot, servicio = conversacion) {
         '',
         'Si algo está mal, escribe /registrar.',
       ].join('\n'),
-      EXTRA_HTML
+      { ...EXTRA_HTML, ...tecladoMenu() }
     );
   });
 
-  bot.command('cancelar', async (ctx) => {
+  alComandoYBoton(bot, 'cancelar', BOTONES_MENU.cancelar, async (ctx) => {
     // Se descartan las dos cosas: el alta a medias y lo que estuviera reportando.
     const registroEnCurso = await registration.cancelarRegistro(ctx.from.id);
     const reportePendiente = hayConversacionPendiente(ctx.from.id);
@@ -65,12 +81,16 @@ export function registrarMenu(bot, servicio = conversacion) {
 
     const habia = registroEnCurso || reportePendiente;
 
+    // Vuelve el menú principal (por si la barra mostraba los síntomas de /reportar).
     return ctx.reply(
       habia
         ? 'Listo, descarté lo que teníamos a medias y no guardé nada.'
-        : 'No había nada pendiente que descartar. Cuando quieras, escribe /reportar.'
+        : `No había nada pendiente que descartar. Cuando quieras, toca ${BOTONES_MENU.reportar}.`,
+      tecladoMenu()
     );
   });
 
-  bot.command('ayuda', async (ctx) => ctx.reply(AYUDA, EXTRA_HTML));
+  alComandoYBoton(bot, 'ayuda', BOTONES_MENU.ayuda, async (ctx) =>
+    ctx.reply(AYUDA, { ...EXTRA_HTML, ...tecladoMenu() })
+  );
 }

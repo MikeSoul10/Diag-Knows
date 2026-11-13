@@ -1,7 +1,7 @@
 /**
  * Extractor de datos de seguimiento a partir de texto libre.
  *
- * Contrato (el mismo para el mock y para Claude):
+ * Contrato (el mismo para el mock y para la IA (Groq)):
  *   {
  *     medicacion: [{ tomada: boolean, nombre: string|null }],
  *     mediciones: [{ tipo: 'glucosa'|'presion'|'peso', valor: number, valor2?: number, unidad: string }],
@@ -20,7 +20,7 @@
  * llega ya anonimizado desde `conversacion.js`).
  */
 
-import { extraerDatos } from '../ai/claude.js';
+import { extraerDatos } from '../ai/groq.js';
 import { usarIAMock } from '../config/env.js';
 import { formatoLocal, localAUtc, localTextoAIsoUtc, partesEnZona } from './fechas.js';
 
@@ -304,7 +304,7 @@ export function extraerMock(texto, { ahora, zonaHoraria } = {}) {
     sintomas: sintomasDe(normalizado),
   };
 
-  // El mock aplica el mismo momento a todo el mensaje; Claude lo distingue por dato.
+  // El mock aplica el mismo momento a todo el mensaje; la IA lo distingue por dato.
   const ocurridoEn = ahora && zonaHoraria ? momentoDe(normalizado, ahora, zonaHoraria) : null;
   return ocurridoEn ? conMomento(resultado, () => ocurridoEn) : resultado;
 }
@@ -383,17 +383,17 @@ function conMomento(resultado, momentoDeItem) {
   };
 }
 
-const SEVERIDAD_DE_CLAUDE = Object.freeze({ leve: 1, moderada: 2, fuerte: 3 });
+const SEVERIDAD_DE_IA = Object.freeze({ leve: 1, moderada: 2, fuerte: 3 });
 
 /** Nombre del medicamento como lo da el mock: minúsculas, sin acentos ni genéricos. */
-function nombreDeClaude(nombre) {
+function nombreDeIA(nombre) {
   const limpio = normalizar(nombre);
   if (!limpio || GENERICAS.has(limpio)) return null;
   return limpio;
 }
 
 /**
- * Traduce la respuesta de Claude al contrato del extractor. Las unidades las
+ * Traduce la respuesta de la IA al contrato del extractor. Las unidades las
  * pone el código (no el modelo) y `valor2` solo existe en presión, igual que
  * en el mock. Los rangos los revisa `validador.js` después.
  */
@@ -401,7 +401,7 @@ function aContrato(datos, zonaHoraria) {
   const contrato = {
     medicacion: datos.medicacion.map(({ tomada, nombre, cuando }) => ({
       tomada,
-      nombre: nombreDeClaude(nombre),
+      nombre: nombreDeIA(nombre),
       cuando,
     })),
     mediciones: datos.mediciones.map(({ tipo, valor, valor2, cuando }) =>
@@ -413,7 +413,7 @@ function aContrato(datos, zonaHoraria) {
       .map(({ descripcion, severidad, cuando }) => ({
         // Conserva acentos: un síntoma fuera de la lista se muestra tal cual al paciente.
         descripcion: String(descripcion).toLowerCase().replace(/\s+/g, ' ').trim(),
-        severidad: severidad === null ? null : SEVERIDAD_DE_CLAUDE[severidad],
+        severidad: severidad === null ? null : SEVERIDAD_DE_IA[severidad],
         cuando,
       }))
       .filter(({ descripcion }) => descripcion),
@@ -435,14 +435,14 @@ function aContrato(datos, zonaHoraria) {
 }
 
 /**
- * Extracción real con la Claude API (DK-201).
+ * Extracción real con la API de Groq (DK-201).
  *
  * @param {string} texto Mensaje ya anonimizado (sin nombres, teléfonos ni IDs).
  * @param {OpcionesExtraccion & { cliente?: object }} [opciones] `cliente` solo en pruebas.
  * @returns {Promise<Extraccion>}
- * @throws {import('../ai/claude.js').ErrorIA} Si Claude falla, declina o no cumple el esquema.
+ * @throws {import('../ai/groq.js').ErrorIA} Si la IA falla, declina o no cumple el esquema.
  */
-export async function extraerConClaude(texto, opciones = {}) {
+export async function extraerConIA(texto, opciones = {}) {
   if (!normalizar(texto)) {
     return { medicacion: [], mediciones: [], sintomas: [] };
   }
@@ -456,7 +456,7 @@ export async function extraerConClaude(texto, opciones = {}) {
  * @typedef {object} OpcionesExtraccion
  * @property {Date} [ahora] Momento del mensaje (para "ayer", "en la noche").
  * @property {string} [zonaHoraria] Zona IANA del paciente.
- * @property {string[]} [contexto] Mensajes anteriores ya anonimizados (solo Claude los usa).
+ * @property {string[]} [contexto] Mensajes anteriores ya anonimizados (solo la IA real los usa).
  */
 
 /**
@@ -476,5 +476,5 @@ export async function extraerConClaude(texto, opciones = {}) {
  */
 export async function extraer(texto, opciones = {}) {
   if (usarIAMock()) return extraerMock(texto, opciones);
-  return extraerConClaude(texto, opciones);
+  return extraerConIA(texto, opciones);
 }

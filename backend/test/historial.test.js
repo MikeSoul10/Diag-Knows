@@ -230,7 +230,10 @@ describe('adaptador /historial', () => {
 
   test('el comando sin consentimiento muestra el aviso de privacidad', async () => {
     const comandos = new Map();
-    registrarComandoHistorial({ command: (nombre, handler) => comandos.set(nombre, handler) });
+    registrarComandoHistorial({
+      command: (nombre, handler) => comandos.set(nombre, handler),
+      hears: (texto, handler) => comandos.set(texto, handler),
+    });
 
     const { ctx, respuestas } = crearCtx('/historial');
     await comandos.get('historial')(ctx);
@@ -240,7 +243,10 @@ describe('adaptador /historial', () => {
   test('el comando con consentimiento responde el resumen', async () => {
     await pacienteActivo();
     const comandos = new Map();
-    registrarComandoHistorial({ command: (nombre, handler) => comandos.set(nombre, handler) });
+    registrarComandoHistorial({
+      command: (nombre, handler) => comandos.set(nombre, handler),
+      hears: (texto, handler) => comandos.set(texto, handler),
+    });
 
     const { ctx, respuestas } = crearCtx('/historial glucosa');
     await comandos.get('historial')(ctx);

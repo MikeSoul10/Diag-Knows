@@ -5,7 +5,7 @@ import { extraer, extraerMock } from '../src/services/extractor.js';
 
 // Las pruebas siempre usan el extractor por regex, aunque la máquina tenga llave.
 process.env.USE_MOCK_AI = 'true';
-process.env.ANTHROPIC_API_KEY = '';
+process.env.GROQ_API_KEY = '';
 
 function medicionDe(texto, tipo) {
   return extraerMock(texto).mediciones.find((medicion) => medicion.tipo === tipo);
@@ -164,10 +164,10 @@ describe('selección de implementación', () => {
     assert.deepEqual(await extraer('glucosa en 115'), extraerMock('glucosa en 115'));
   });
 
-  test('con USE_MOCK_AI=false intenta Claude y falla de forma controlada sin red', async () => {
-    const modeloPrevio = process.env.ANTHROPIC_MODEL;
+  test('con USE_MOCK_AI=false intenta la IA real y falla de forma controlada sin red', async () => {
+    const modeloPrevio = process.env.GROQ_MODEL;
     process.env.USE_MOCK_AI = 'false';
-    process.env.ANTHROPIC_MODEL = '';
+    process.env.GROQ_MODEL = '';
     try {
       // Sin modelo configurado falla antes de crear el cliente: no hay llamada de red.
       await assert.rejects(() => extraer('glucosa en 115'), {
@@ -176,8 +176,8 @@ describe('selección de implementación', () => {
       });
     } finally {
       process.env.USE_MOCK_AI = 'true';
-      if (modeloPrevio === undefined) delete process.env.ANTHROPIC_MODEL;
-      else process.env.ANTHROPIC_MODEL = modeloPrevio;
+      if (modeloPrevio === undefined) delete process.env.GROQ_MODEL;
+      else process.env.GROQ_MODEL = modeloPrevio;
     }
   });
 });
