@@ -88,6 +88,30 @@ const TEXTO_YA_REGISTRADO =
 const TEXTO_NO_VIGENTE =
   'Esa opción ya no está vigente. Escríbeme de nuevo lo que quieres registrar.';
 
+/** Texto de la opción para saltar un paso del reporte guiado. */
+export const TEXTO_OMITIR = 'Nada que reportar';
+
+/**
+ * Respuestas rápidas del paso de síntomas: el canal las muestra como botones
+ * en la barra de mensajes y, al tocar una, llega como texto normal (el
+ * extractor la reconoce igual que si el paciente la escribiera).
+ */
+export const OPCIONES_SINTOMAS = Object.freeze([
+  ['Dolor de cabeza', 'Mareo'],
+  ['Cansancio', 'Falta de aire'],
+  ['Náuseas', 'Tos', 'Silbidos en el pecho'],
+  [TEXTO_OMITIR],
+]);
+
+/** Lo que cuenta como "saltar este paso" si llega escrito (o tocado en la barra). */
+const PATRONES_OMITIR = [
+  /^nada que reportar$/,
+  /^nada$/,
+  /^ninguno$/,
+  /^ninguna$/,
+  /^sin sintomas$/,
+];
+
 /** Preguntas médicas: el bot no opina (DK-205). */
 const PATRONES_PREGUNTA = [
   /^\s*¿/,
@@ -146,6 +170,11 @@ function esPasoDePregunta(estado) {
 
 function parecePregunta(texto) {
   return PATRONES_PREGUNTA.some((patron) => patron.test(texto));
+}
+
+function esOmitir(texto) {
+  const limpio = normalizar(texto).replace(/[.!¡]/g, '').trim();
+  return PATRONES_OMITIR.some((patron) => patron.test(limpio));
 }
 
 function contarValidos(validos) {
@@ -350,15 +379,17 @@ export function crearServicioConversacion({
   // -------------------------------------------------------------------------
 
   function botonOmitir(estado) {
-    return [{ texto: 'Nada que reportar', callback: `conv:skip:${estado.token}` }];
+    return [{ texto: TEXTO_OMITIR, callback: `conv:skip:${estado.token}` }];
   }
 
   async function preguntaDePaso(paciente, estado) {
     if (estado.estado === ESTADOS.PREGUNTANDO_SINTOMAS) {
+      // Sin botones en línea: los síntomas van como respuestas rápidas en la barra
+      // (Telegram no admite los dos teclados en el mismo mensaje).
       return {
         texto:
-          '¿Cómo te sentiste? Cuéntame si tuviste algún síntoma: dolor de cabeza, mareo, cansancio, falta de aire, náuseas, tos o silbidos en el pecho.',
-        botones: [botonOmitir(estado)],
+          '¿Cómo te sentiste? Toca un síntoma de los botones de abajo o cuéntamelo con tus palabras.',
+        opcionesRapidas: OPCIONES_SINTOMAS.map((fila) => [...fila]),
       };
     }
 
@@ -492,7 +523,7 @@ export function crearServicioConversacion({
     // 3. No hay nada que registrar.
     if (estaVacio(siguiente.borrador)) {
       almacenEstado.limpiar(chatId);
-      return conAvisos({ texto: TEXTO_NADA_QUE_GUARDAR }, avisos);
+      return conAvisos({ texto: TEXTO_NADA_QUE_GUARDAR, mostrarMenu: true }, avisos);
     }
 
     // 4. Resumen y espera de confirmación.
@@ -631,7 +662,13 @@ export function crearServicioConversacion({
     // Lo ya guardado no debe volver a extraerse como "contexto".
     olvidarContexto(chatId);
 
-    return { texto: resumenGuardado(borrador), editarMensaje: true, aviso: 'Guardado' };
+    // El reporte terminó: el canal vuelve a poner el menú principal en la barra.
+    return {
+      texto: resumenGuardado(borrador),
+      editarMensaje: true,
+      aviso: 'Guardado',
+      mostrarMenu: true,
+    };
   }
 
   async function corregir(chatId, estado) {
@@ -726,6 +763,7 @@ export function crearServicioConversacion({
         pregunta.texto
       ),
       botones: pregunta.botones,
+      opcionesRapidas: pregunta.opcionesRapidas,
     };
   }
 
@@ -737,6 +775,12 @@ export function crearServicioConversacion({
     const limpio = String(texto ?? '').trim();
     if (!limpio) {
       return { texto: 'No me llegó texto. Escríbeme lo que quieres registrar.' };
+    }
+
+    // "Nada que reportar" (escrito o tocado en la barra) salta el paso guiado.
+    const enCurso = leerEstado(chatId);
+    if (enCurso && esPasoDePregunta(enCurso.estado) && esOmitir(limpio)) {
+      return { ...(await omitir(chatId, enCurso)), editarMensaje: false };
     }
 
     const anonimizado = anonimizar(limpio, { nombres: [paciente.alias] });
@@ -769,6 +813,7 @@ export function crearServicioConversacion({
         return {
           texto: unir(avisos, TEXTO_NO_ENTENDI, pregunta.texto),
           botones: pregunta.botones,
+          opcionesRapidas: pregunta.opcionesRapidas,
         };
       }
       return { texto: unir(avisos, TEXTO_NO_ENTENDI) };

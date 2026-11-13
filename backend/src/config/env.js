@@ -45,8 +45,8 @@ export function usarIAMock() {
   const forzado = (process.env.USE_MOCK_AI || '').trim().toLowerCase();
   if (forzado === 'true') return true;
   if (forzado === 'false') return false;
-  // Sin llave no hay forma de llamar a Claude: usamos el extractor por regex.
-  return !(process.env.ANTHROPIC_API_KEY || '').trim();
+  // Sin llave no hay forma de llamar a Groq: usamos el extractor por regex.
+  return !(process.env.GROQ_API_KEY || '').trim();
 }
 
 /** Zona horaria si el paciente no tiene una propia (TZ, o Ciudad de México). */

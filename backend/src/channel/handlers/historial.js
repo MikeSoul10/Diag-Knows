@@ -1,5 +1,5 @@
 import { resumenHistorial, tipoDeArgumento } from '../../services/historial.js';
-import { EXTRA_HTML } from '../format.js';
+import { BOTONES_MENU, EXTRA_HTML } from '../format.js';
 import { ejecutarConversacion, recordarConsentimiento } from './render.js';
 
 /**
@@ -15,7 +15,7 @@ export async function responderHistorial(ctx, { tipo = null } = {}) {
   return ctx.reply(respuesta.texto, respuesta.error ? undefined : EXTRA_HTML);
 }
 
-/** Comando /historial [glucosa|presión|peso]. */
+/** Comando /historial [glucosa|presión|peso] y el botón «Historial» del menú. */
 export function registrarComandoHistorial(bot) {
   bot.command('historial', async (ctx) => {
     const argumento = String(ctx.message?.text ?? '')
@@ -24,4 +24,6 @@ export function registrarComandoHistorial(bot) {
 
     return responderHistorial(ctx, { tipo: tipoDeArgumento(argumento) });
   });
+
+  bot.hears(BOTONES_MENU.historial, (ctx) => responderHistorial(ctx));
 }

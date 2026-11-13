@@ -488,7 +488,7 @@ describe('PostgreSQL (integración)', { skip: omitir }, () => {
 
   describe('DK-103: un reporte confirmado queda cifrado en PostgreSQL', () => {
     test('nada se guarda antes de confirmar; al confirmar se guardan los tres registros', async () => {
-      process.env.USE_MOCK_AI = 'true'; // extractor por regex: sin red ni llave de Anthropic
+      process.env.USE_MOCK_AI = 'true'; // extractor por regex: sin red ni llave de Groq
       const { crearConversacion } = await import('../../src/channel/conversacion.instancia.js');
       let n = 0;
       const servicio = crearConversacion({ generarToken: () => `tok${(n += 1)}` });

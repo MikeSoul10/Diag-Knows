@@ -18,6 +18,7 @@ import {
 import { publicarComandos, COMANDOS } from '../src/channel/bot.js';
 import {
   AVISO_PRIVACIDAD,
+  BOTONES_MENU,
   MENSAJE_SOLO_TEXTO,
   tecladoConversacion,
 } from '../src/channel/format.js';
@@ -34,7 +35,7 @@ import {
   existe as haySesion,
 } from '../src/services/session.store.js';
 
-// Determinista: sin Claude y sin PostgreSQL aunque la máquina tenga las llaves.
+// Determinista: sin IA real y sin PostgreSQL aunque la máquina tenga las llaves.
 process.env.USE_MOCK_AI = 'true';
 process.env.USE_MOCK_REPOS = 'true';
 
@@ -59,6 +60,9 @@ function crearBotFalso() {
     bot: {
       command(nombre, handler) {
         comandos.set(nombre, handler);
+      },
+      hears(texto, handler) {
+        comandos.set(texto, handler);
       },
       action(patron, handler) {
         acciones.push({ patron, handler });
@@ -186,7 +190,8 @@ describe('instancia de la conversación', () => {
       .flatMap((respuesta) => botonesDe(respuesta))
       .map(({ callback }) => callback);
 
-    assert.ok(callbacks.length >= 5);
+    // Intensidad (3) + omitir medicación (1). Los síntomas van en la barra, sin callback.
+    assert.ok(callbacks.length >= 4);
     for (const callback of callbacks) {
       assert.ok(
         Buffer.byteLength(callback, 'utf8') <= 64,
@@ -296,6 +301,45 @@ describe('formato de las respuestas', () => {
 
     assert.equal(llamadas.reply.length, 1);
     assert.equal(llamadas.reply[0].mensaje, 'Resumen');
+  });
+
+  test('las opciones rápidas van en la barra y obligan a mandar un mensaje nuevo', async () => {
+    const { ctx, llamadas } = crearCtx();
+
+    await responderConversacion(
+      ctx,
+      { texto: '¿Cómo te sentiste?', opcionesRapidas: [['Tos'], ['Nada que reportar']] },
+      { editar: true }
+    );
+
+    assert.equal(llamadas.editMessageText.length, 0);
+    assert.deepEqual(llamadas.reply[0].extra.reply_markup.keyboard, [
+      ['Tos'],
+      ['Nada que reportar'],
+    ]);
+  });
+
+  test('mostrarMenu pega el menú al mensaje si no lleva otro teclado', async () => {
+    const { ctx, llamadas } = crearCtx();
+
+    await responderConversacion(ctx, { texto: 'Nada que guardar', mostrarMenu: true });
+
+    assert.equal(llamadas.reply.length, 1);
+    assert.equal(llamadas.reply[0].extra.reply_markup.is_persistent, true);
+  });
+
+  test('mostrarMenu con botones en línea manda el menú en un mensaje aparte', async () => {
+    const { ctx, llamadas } = crearCtx();
+
+    await responderConversacion(ctx, {
+      texto: 'Listo',
+      botones: [[{ texto: 'Ok', callback: 'conv:ok:abc' }]],
+      mostrarMenu: true,
+    });
+
+    assert.equal(llamadas.reply.length, 2);
+    assert.ok(llamadas.reply[0].extra.reply_markup.inline_keyboard);
+    assert.equal(llamadas.reply[1].extra.reply_markup.is_persistent, true);
   });
 });
 
@@ -444,6 +488,29 @@ describe('handler de mensajes', () => {
 // ---------------------------------------------------------------------------
 
 describe('handler de callbacks', () => {
+  test('elegir la enfermedad con botón muestra el resumen CON los botones de confirmar', async () => {
+    const bot = crearBotFalso();
+    registrarCallbacks(bot.bot, crearServicioFalso());
+    await pacienteConConsentimiento();
+    await registration.iniciarRegistro(CHAT);
+    await registration.procesarTexto(CHAT, 'Ana');
+    const pregunta = await registration.procesarTexto(CHAT, '1980');
+    const [opcion] = pregunta.opciones;
+
+    const { ctx, llamadas } = crearCtx({ data: `enf:${opcion.id}` });
+    ctx.match = [`enf:${opcion.id}`, opcion.id];
+    await bot.accionPara(`enf:${opcion.id}`)(ctx);
+
+    assert.equal(llamadas.editMessageText.length, 1);
+    const { mensaje, extra } = llamadas.editMessageText[0];
+    assert.match(mensaje, /Revisa tus datos/);
+    const botones = extra?.reply_markup?.inline_keyboard?.flat() ?? [];
+    assert.deepEqual(
+      botones.map((boton) => boton.callback_data),
+      ['reg:ok', 'reg:no']
+    );
+  });
+
   test('confirmar responde el aviso y edita el mensaje del resumen', async () => {
     const bot = crearBotFalso();
     registrarCallbacks(bot.bot);
@@ -462,10 +529,18 @@ describe('handler de callbacks', () => {
     await handler(ctx);
 
     assert.deepEqual(llamadas.answerCbQuery, ['Guardado']);
-    assert.equal(llamadas.reply.length, 0);
     assert.equal(llamadas.editMessageText.length, 1);
     assert.match(llamadas.editMessageText[0].mensaje, /quedó guardado/);
     assert.equal((await mediciones.listarPorPaciente(paciente.id)).length, 1);
+
+    // El reporte terminó: el menú principal vuelve a la barra en un mensaje aparte
+    // (un mensaje editado no puede llevar ese teclado).
+    assert.equal(llamadas.reply.length, 1);
+    assert.match(llamadas.reply[0].mensaje, /botones de abajo/);
+    assert.deepEqual(llamadas.reply[0].extra.reply_markup.keyboard[0], [
+      BOTONES_MENU.reportar,
+      BOTONES_MENU.tome,
+    ]);
   });
 
   test('un token viejo avisa por el botón y contesta con un mensaje nuevo', async () => {
@@ -532,7 +607,7 @@ describe('handler de callbacks', () => {
 // ---------------------------------------------------------------------------
 
 describe('comandos del menú', () => {
-  test('/reportar arranca el flujo guiado con HTML y su botón de omitir', async () => {
+  test('/reportar arranca el flujo guiado con los síntomas como botones en la barra', async () => {
     const bot = crearBotFalso();
     registrarMenu(bot.bot);
     await pacienteConConsentimiento();
@@ -543,12 +618,45 @@ describe('comandos del menú', () => {
     assert.equal(llamadas.reply.length, 1);
     assert.equal(llamadas.reply[0].extra.parse_mode, 'HTML');
     assert.match(llamadas.reply[0].mensaje, /Cómo te sentiste/);
-    assert.equal(
-      llamadas.reply[0].extra.reply_markup.inline_keyboard[0][0].callback_data.startsWith(
-        'conv:skip:'
-      ),
-      true
-    );
+
+    const markup = llamadas.reply[0].extra.reply_markup;
+    assert.equal(markup.inline_keyboard, undefined);
+    assert.equal(markup.one_time_keyboard, true);
+    const textos = markup.keyboard.flat().map((boton) => boton.text ?? boton);
+    assert.ok(textos.includes('Dolor de cabeza'));
+    assert.ok(textos.includes('Nada que reportar'));
+  });
+
+  test('el botón del menú hace lo mismo que su comando', async () => {
+    const bot = crearBotFalso();
+    registrarMenu(bot.bot);
+    await pacienteConConsentimiento();
+
+    for (const [comando, boton] of [
+      ['reportar', BOTONES_MENU.reportar],
+      ['perfil', BOTONES_MENU.perfil],
+      ['ayuda', BOTONES_MENU.ayuda],
+      ['cancelar', BOTONES_MENU.cancelar],
+    ]) {
+      assert.equal(bot.comandos.get(boton), bot.comandos.get(comando), `${boton} → /${comando}`);
+    }
+  });
+
+  test('/ayuda muestra el menú principal en la barra', async () => {
+    const bot = crearBotFalso();
+    registrarMenu(bot.bot);
+
+    const { ctx, llamadas } = crearCtx();
+    await bot.comandos.get('ayuda')(ctx);
+
+    const markup = llamadas.reply[0].extra.reply_markup;
+    assert.equal(markup.is_persistent, true);
+    assert.equal(markup.resize_keyboard, true);
+    assert.deepEqual(markup.keyboard, [
+      [BOTONES_MENU.reportar, BOTONES_MENU.tome],
+      [BOTONES_MENU.historial, BOTONES_MENU.perfil],
+      [BOTONES_MENU.ayuda, BOTONES_MENU.cancelar],
+    ]);
   });
 
   test('/cancelar limpia el registro a medias y la conversación', async () => {

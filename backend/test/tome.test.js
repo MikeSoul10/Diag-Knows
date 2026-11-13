@@ -136,6 +136,7 @@ describe('adaptador /tome', () => {
     const acciones = [];
     registrarComandoTome({
       command: (nombre, handler) => comandos.set(nombre, handler),
+      hears: (texto, handler) => comandos.set(texto, handler),
       action: (patron, handler) => acciones.push({ patron, handler }),
     });
     return { comandos, acciones };

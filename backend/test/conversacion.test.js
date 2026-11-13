@@ -5,6 +5,8 @@ import {
   crearAlmacenMemoria,
   crearServicioConversacion,
   ESTADOS,
+  OPCIONES_SINTOMAS,
+  TEXTO_OMITIR,
   TTL_MINUTOS,
 } from '../src/services/conversacion.js';
 import { extraerMock } from '../src/services/extractor.js';
@@ -249,14 +251,14 @@ describe('flujo guiado (/reportar)', () => {
     const inicio = await servicio.iniciar({ chatId: CHAT });
     assert.match(inicio.texto, /Vamos a registrar cómo te sientes hoy/);
     assert.match(inicio.texto, /¿Cómo te sentiste\?/);
+    assert.deepEqual(inicio.opcionesRapidas, OPCIONES_SINTOMAS);
+    assert.equal(inicio.botones, undefined);
     assert.equal(estadoDe().estado, ESTADOS.PREGUNTANDO_SINTOMAS);
 
-    const trasSintomas = await servicio.procesarCallback({
-      chatId: CHAT,
-      accion: 'skip',
-      token: tokenDe(inicio, 'conv:skip:'),
-    });
+    // "Nada que reportar" llega como texto desde los botones de la barra.
+    const trasSintomas = await servicio.procesarMensaje({ chatId: CHAT, texto: TEXTO_OMITIR });
     assert.match(trasSintomas.texto, /¿Te tomaste algún medicamento hoy\?/);
+    assert.notEqual(trasSintomas.editarMensaje, true);
     assert.equal(estadoDe().estado, ESTADOS.PREGUNTANDO_MEDICACION);
 
     const trasMedicacion = await servicio.procesarMensaje({
@@ -291,20 +293,41 @@ describe('flujo guiado (/reportar)', () => {
 
     assert.match(respuesta.texto, /No identifiqué datos para registrar/);
     assert.match(respuesta.texto, /¿Cómo te sentiste\?/);
-    assert.ok(botonesDe(respuesta).some(({ callback }) => callback.startsWith('conv:skip:')));
+    assert.deepEqual(respuesta.opcionesRapidas, OPCIONES_SINTOMAS);
     assert.equal(estadoDe().estado, ESTADOS.PREGUNTANDO_SINTOMAS);
   });
 
-  test('omitir todo no inventa un registro', async () => {
+  test('tocar un síntoma de la barra lo registra y pregunta su intensidad', async () => {
+    const { servicio } = crearHarness();
+    await pacienteConConsentimiento();
+
+    await servicio.iniciar({ chatId: CHAT });
+    for (const fila of OPCIONES_SINTOMAS.slice(0, -1)) {
+      for (const sintoma of fila) {
+        const extraido = extraerMock(sintoma);
+        assert.equal(extraido.sintomas.length, 1, `el extractor debe reconocer "${sintoma}"`);
+      }
+    }
+
+    const respuesta = await servicio.procesarMensaje({ chatId: CHAT, texto: 'Mareo' });
+    assert.match(respuesta.texto, /¿Qué intensidad tenía <b>mareo<\/b>\?/);
+  });
+
+  test('"nada" fuera del reporte guiado no se toma como omitir', async () => {
+    const { servicio, estadoDe } = crearHarness();
+    await pacienteConConsentimiento();
+
+    const respuesta = await servicio.procesarMensaje({ chatId: CHAT, texto: 'nada' });
+    assert.match(respuesta.texto, /No identifiqué datos/);
+    assert.equal(estadoDe(), null);
+  });
+
+  test('omitir todo no inventa un registro y devuelve el menú', async () => {
     const { servicio, estadoDe } = crearHarness();
     const paciente = await pacienteConConsentimiento();
 
-    const inicio = await servicio.iniciar({ chatId: CHAT });
-    const paso2 = await servicio.procesarCallback({
-      chatId: CHAT,
-      accion: 'skip',
-      token: tokenDe(inicio, 'conv:skip:'),
-    });
+    await servicio.iniciar({ chatId: CHAT });
+    const paso2 = await servicio.procesarMensaje({ chatId: CHAT, texto: 'Nada que reportar' });
     const paso3 = await servicio.procesarCallback({
       chatId: CHAT,
       accion: 'skip',
@@ -318,6 +341,7 @@ describe('flujo guiado (/reportar)', () => {
 
     assert.match(final.texto, /No hay nada que guardar/);
     assert.equal(final.botones, undefined);
+    assert.equal(final.mostrarMenu, true);
     assert.equal(estadoDe(), null);
     assert.deepEqual(await registrosDe(paciente), { mediciones: [], sintomas: [], dosis: [] });
   });
@@ -327,12 +351,8 @@ describe('flujo guiado (/reportar)', () => {
     const paciente = await pacienteConConsentimiento();
     await medicamentos.sembrarDatosDesarrollo(paciente.id);
 
-    const inicio = await servicio.iniciar({ chatId: CHAT });
-    const paso2 = await servicio.procesarCallback({
-      chatId: CHAT,
-      accion: 'skip',
-      token: tokenDe(inicio, 'conv:skip:'),
-    });
+    await servicio.iniciar({ chatId: CHAT });
+    const paso2 = await servicio.procesarMensaje({ chatId: CHAT, texto: 'ninguno' });
 
     assert.match(paso2.texto, /Metformina/);
     assert.match(paso2.texto, /Losartán/);

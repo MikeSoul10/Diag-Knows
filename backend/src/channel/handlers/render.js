@@ -8,17 +8,33 @@
 import {
   AVISO_PRIVACIDAD,
   EXTRA_HTML,
+  MENSAJE_MENU,
   tecladoConfirmar,
   tecladoConsentimiento,
   tecladoConversacion,
   tecladoEnfermedades,
+  tecladoMenu,
+  tecladoOpcionesRapidas,
   tecladoRegistrar,
 } from '../format.js';
+
+/** Con el registro listo, el paciente ve el menú principal en la barra. */
+const TIPOS_CON_MENU = new Set(['completado', 'ya_registrado']);
 
 function tecladoPara(resultado) {
   if (resultado.tipo === 'resumen') return tecladoConfirmar();
   if (resultado.opciones?.length) return tecladoEnfermedades(resultado.opciones);
+  if (TIPOS_CON_MENU.has(resultado.tipo)) return tecladoMenu();
   return null;
+}
+
+/**
+ * Manda el menú principal a la barra. Se usa cuando el mensaje anterior no
+ * pudo llevarlo (un mensaje editado o uno con botones en línea: Telegram solo
+ * admite un teclado por mensaje).
+ */
+export async function mostrarMenu(ctx, texto = MENSAJE_MENU) {
+  return ctx.reply(texto, tecladoMenu());
 }
 
 export async function responder(ctx, resultado) {
@@ -66,8 +82,17 @@ function esMensajeSinCambios(error) {
  * mensaje. Al editar sin botones se quita el teclado viejo: si no, Telegram
  * deja activos unos botones cuyo token ya no sirve.
  *
+ * Teclados (Telegram admite uno por mensaje):
+ *   - `botones`: botones en línea, pegados al mensaje. Tienen prioridad.
+ *   - `opcionesRapidas`: filas de textos que se muestran en la barra de
+ *     mensajes; al tocar uno llega como si el paciente lo escribiera. Un
+ *     mensaje editado no puede llevarlas, así que en ese caso se manda uno nuevo.
+ *   - `mostrarMenu`: el flujo terminó y vuelve el menú principal a la barra.
+ *     Si el mensaje ya llevaba otro teclado (o se editó), el menú se manda en
+ *     un mensaje corto aparte.
+ *
  * @param {object} ctx Contexto de Telegraf.
- * @param {{ texto: string, botones?: Array<Array<{texto: string, callback: string}>>, editarMensaje?: boolean }} respuesta
+ * @param {{ texto: string, botones?: Array<Array<{texto: string, callback: string}>>, opcionesRapidas?: string[][], mostrarMenu?: boolean, editarMensaje?: boolean }} respuesta
  * @param {{ editar?: boolean }} [opciones]
  */
 export async function responderConversacion(ctx, respuesta, { editar = false } = {}) {
@@ -78,22 +103,35 @@ export async function responderConversacion(ctx, respuesta, { editar = false } =
 
   const extra = { ...EXTRA_HTML };
   const teclado = tecladoConversacion(respuesta.botones);
-  const vaAEditar = editar && respuesta.editarMensaje !== false;
+  const rapidas = teclado ? null : tecladoOpcionesRapidas(respuesta.opcionesRapidas);
+  const vaAEditar = editar && respuesta.editarMensaje !== false && !rapidas;
+  let menuAparte = Boolean(respuesta.mostrarMenu);
 
-  if (teclado) extra.reply_markup = teclado.reply_markup;
-  else if (vaAEditar) extra.reply_markup = { inline_keyboard: [] };
-
-  if (vaAEditar) {
-    try {
-      return await ctx.editMessageText(texto, extra);
-    } catch (error) {
-      if (esMensajeSinCambios(error)) return null;
-      // Mensaje viejo o sin permisos para editarlo: se manda aparte.
-      return ctx.reply(texto, extra);
-    }
+  if (teclado) {
+    extra.reply_markup = teclado.reply_markup;
+  } else if (rapidas) {
+    extra.reply_markup = rapidas.reply_markup;
+  } else if (vaAEditar) {
+    extra.reply_markup = { inline_keyboard: [] };
+  } else if (menuAparte) {
+    extra.reply_markup = tecladoMenu().reply_markup;
+    menuAparte = false;
   }
 
-  return ctx.reply(texto, extra);
+  let enviado = null;
+  if (vaAEditar) {
+    try {
+      enviado = await ctx.editMessageText(texto, extra);
+    } catch (error) {
+      // Mensaje viejo o sin permisos para editarlo: se manda aparte.
+      if (!esMensajeSinCambios(error)) enviado = await ctx.reply(texto, extra);
+    }
+  } else {
+    enviado = await ctx.reply(texto, extra);
+  }
+
+  if (menuAparte) await mostrarMenu(ctx);
+  return enviado;
 }
 
 /**

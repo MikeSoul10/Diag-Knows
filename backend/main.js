@@ -36,7 +36,7 @@ console.log(
     ? 'Repositorios en memoria (mock). Configura DATABASE_URL y USE_MOCK_REPOS=false para PostgreSQL.'
     : 'Repositorios PostgreSQL.'
 );
-if (usarIAMock()) console.log('Extractor simulado (sin llamadas a Claude).');
+if (usarIAMock()) console.log('Extractor simulado (sin llamadas a Groq).');
 
 let webhook;
 if (modo === 'webhook') {

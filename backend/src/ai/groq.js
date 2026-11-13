@@ -1,23 +1,31 @@
 /**
- * Cliente de la API de Claude (DK-201).
+ * Cliente de la API de Groq (DK-201; reemplaza al cliente de Claude, ver D17).
  *
  * Un solo cliente para toda la app, creado la primera vez que se usa (así las
  * pruebas y el modo mock nunca necesitan llave). El modelo sale de
- * `ANTHROPIC_MODEL`; `max_tokens`, timeout y reintentos van acotados aquí.
+ * `GROQ_MODEL`; `max_completion_tokens`, timeout y reintentos van acotados aquí.
  *
- * La salida se pide con structured outputs + Zod: la API restringe la respuesta
- * al esquema y aquí se valida otra vez con Zod. Si aun así no cumple, se reintenta
- * UNA vez con un mensaje de corrección; si vuelve a fallar, se lanza `ErrorIA`
- * y `conversacion.js` le pide al paciente que lo intente de nuevo.
+ * La salida se pide con Structured Outputs en modo estricto (`json_schema`,
+ * `strict: true`): Groq restringe la respuesta al esquema y aquí se valida otra
+ * vez con Zod. Si aun así no cumple (por ejemplo, la respuesta se cortó), se
+ * reintenta UNA vez con un mensaje de corrección; si vuelve a fallar, se lanza
+ * `ErrorIA` y `conversacion.js` le pide al paciente que lo intente de nuevo.
  *
  * Privacidad:
  * - Recibe texto YA anonimizado (lo hace `conversacion.js`).
  * - No registra nada en logs: ni el texto, ni la respuesta, ni valores.
  * - Los errores que lanza no incluyen el texto del paciente.
+ * - Se pide `include_reasoning: false`: el razonamiento del modelo no viaja de
+ *   regreso (no hace falta y podría repetir datos del paciente).
  */
 
-import Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import Groq, {
+  APIConnectionError,
+  APIConnectionTimeoutError,
+  APIError,
+  AuthenticationError,
+  RateLimitError,
+} from 'groq-sdk';
 import { z } from 'zod';
 
 import { MENSAJE_CORRECCION, PROMPT_EXTRACCION } from './prompts.js';
@@ -34,15 +42,15 @@ const REINTENTOS_RED = 1;
 /** Extraer datos es una tarea sencilla: poco razonamiento basta y responde más rápido. */
 const ESFUERZO = 'low';
 
-/**
- * Esquema que el modelo debe cumplir. Es la forma "para el modelo"; el
- * extractor la traduce al contrato interno (severidad 1/2/3, unidad, etc.).
- * Todo campo es obligatorio (null cuando no aplica) para que structured
- * outputs lo pueda exigir.
- */
 /** Hora local "YYYY-MM-DDTHH:mm" en que ocurrió, o null si el paciente no lo dijo. */
 const CUANDO = z.string().nullable();
 
+/**
+ * Esquema que el modelo debe cumplir. Es la forma "para el modelo"; el
+ * extractor la traduce al contrato interno (severidad 1/2/3, unidad, etc.).
+ * Todo campo es obligatorio (null cuando no aplica): el modo estricto de Groq
+ * no admite campos opcionales.
+ */
 export const EsquemaExtraccion = z.object({
   medicacion: z.array(
     z.object({
@@ -69,6 +77,25 @@ export const EsquemaExtraccion = z.object({
 });
 
 /**
+ * JSON Schema para el modo estricto: sin `$schema` y con
+ * `additionalProperties: false` en cada objeto, como lo exige Groq.
+ */
+function esquemaEstricto(nodo) {
+  if (Array.isArray(nodo)) return nodo.map(esquemaEstricto);
+  if (!nodo || typeof nodo !== 'object') return nodo;
+
+  const salida = {};
+  for (const [clave, valor] of Object.entries(nodo)) {
+    if (clave === '$schema') continue;
+    salida[clave] = esquemaEstricto(valor);
+  }
+  if (salida.type === 'object') salida.additionalProperties = false;
+  return salida;
+}
+
+export const ESQUEMA_JSON = esquemaEstricto(z.toJSONSchema(EsquemaExtraccion));
+
+/**
  * Error controlado de la capa de IA. `codigo` permite decidir qué hacer sin
  * revisar mensajes: configuracion | timeout | red | limite | api | rechazo | formato.
  */
@@ -84,16 +111,16 @@ let clienteCompartido = null;
 
 function clientePorDefecto() {
   if (!clienteCompartido) {
-    // Toma ANTHROPIC_API_KEY del entorno; nunca se escribe en el código.
-    clienteCompartido = new Anthropic({ timeout: TIMEOUT_MS, maxRetries: REINTENTOS_RED });
+    // Toma GROQ_API_KEY del entorno; nunca se escribe en el código.
+    clienteCompartido = new Groq({ timeout: TIMEOUT_MS, maxRetries: REINTENTOS_RED });
   }
   return clienteCompartido;
 }
 
 function modelo() {
-  const nombre = (process.env.ANTHROPIC_MODEL || '').trim();
+  const nombre = (process.env.GROQ_MODEL || '').trim();
   if (!nombre) {
-    throw new ErrorIA('configuracion', 'Falta ANTHROPIC_MODEL en el entorno.');
+    throw new ErrorIA('configuracion', 'Falta GROQ_MODEL en el entorno.');
   }
   return nombre;
 }
@@ -101,22 +128,22 @@ function modelo() {
 /** Traduce errores del SDK a `ErrorIA`, del más específico al más general. */
 function traducirError(error) {
   if (error instanceof ErrorIA) return error;
-  if (error instanceof Anthropic.APIConnectionTimeoutError) {
-    return new ErrorIA('timeout', 'Claude no respondió a tiempo.', { cause: error });
+  if (error instanceof APIConnectionTimeoutError) {
+    return new ErrorIA('timeout', 'Groq no respondió a tiempo.', { cause: error });
   }
-  if (error instanceof Anthropic.APIConnectionError) {
-    return new ErrorIA('red', 'No hubo conexión con la API de Claude.', { cause: error });
+  if (error instanceof APIConnectionError) {
+    return new ErrorIA('red', 'No hubo conexión con la API de Groq.', { cause: error });
   }
-  if (error instanceof Anthropic.AuthenticationError) {
-    return new ErrorIA('configuracion', 'ANTHROPIC_API_KEY inválida.', { cause: error });
+  if (error instanceof AuthenticationError) {
+    return new ErrorIA('configuracion', 'GROQ_API_KEY inválida.', { cause: error });
   }
-  if (error instanceof Anthropic.RateLimitError) {
-    return new ErrorIA('limite', 'Se alcanzó el límite de uso de la API de Claude.', {
+  if (error instanceof RateLimitError) {
+    return new ErrorIA('limite', 'Se alcanzó el límite de uso de la API de Groq.', {
       cause: error,
     });
   }
-  if (error instanceof Anthropic.APIError) {
-    return new ErrorIA('api', `La API de Claude respondió con error ${error.status ?? ''}.`, {
+  if (error instanceof APIError) {
+    return new ErrorIA('api', `La API de Groq respondió con error ${error.status ?? ''}.`, {
       cause: error,
     });
   }
@@ -125,7 +152,7 @@ function traducirError(error) {
 
 /**
  * Contenido del turno del usuario. La fecha y el contexto van aquí y no en el
- * prompt de sistema, para que este último sea fijo (cacheable).
+ * prompt de sistema, para que este último sea fijo.
  */
 function contenidoUsuario(texto, { ahoraLocal, zonaHoraria, contexto } = {}) {
   const anteriores = (contexto ?? []).filter(Boolean);
@@ -143,17 +170,9 @@ function contenidoUsuario(texto, { ahoraLocal, zonaHoraria, contexto } = {}) {
   return partes.join('\n\n');
 }
 
-function textoDeRespuesta(respuesta) {
-  return (respuesta.content ?? [])
-    .filter((bloque) => bloque.type === 'text')
-    .map((bloque) => bloque.text)
-    .join('');
-}
-
 /**
- * Valida el JSON aquí y no con `messages.parse()`: los errores de parseo del
- * SDK incluyen fragmentos de la respuesta (datos clínicos) en su mensaje, y
- * esos mensajes podrían terminar en un log.
+ * Valida el JSON aquí con `safeParse`: un error de parseo nunca lleva la
+ * respuesta (datos clínicos) en su mensaje, así que no puede terminar en un log.
  */
 function leerJson(texto) {
   try {
@@ -163,15 +182,12 @@ function leerJson(texto) {
   }
 }
 
-/** Solo el esquema JSON; el SDK lo adapta a lo que acepta structured outputs. */
-const { type: TIPO_FORMATO, schema: ESQUEMA_JSON } = zodOutputFormat(EsquemaExtraccion);
-
 /**
- * Pide a Claude los datos del mensaje.
+ * Pide a Groq los datos del mensaje.
  *
  * @param {string} texto Mensaje del paciente, ya anonimizado.
  * @param {object} [opciones]
- * @param {{ messages: { create: Function } }} [opciones.cliente] Solo en pruebas.
+ * @param {{ chat: { completions: { create: Function } } }} [opciones.cliente] Solo en pruebas.
  * @param {string} [opciones.ahoraLocal] "YYYY-MM-DDTHH:mm" en la zona del paciente.
  * @param {string} [opciones.zonaHoraria] Zona IANA del paciente.
  * @param {string[]} [opciones.contexto] Mensajes anteriores, ya anonimizados.
@@ -185,15 +201,17 @@ export async function extraerDatos(texto, { cliente, ahoraLocal, zonaHoraria, co
   const api = cliente ?? clientePorDefecto();
   const peticionBase = {
     model: nombreModelo,
-    max_tokens: MAX_TOKENS_EXTRACCION,
-    system: PROMPT_EXTRACCION,
-    output_config: {
-      effort: ESFUERZO,
-      format: { type: TIPO_FORMATO, schema: ESQUEMA_JSON },
+    max_completion_tokens: MAX_TOKENS_EXTRACCION,
+    reasoning_effort: ESFUERZO,
+    include_reasoning: false,
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'extraccion', strict: true, schema: ESQUEMA_JSON },
     },
   };
 
   const mensajes = [
+    { role: 'system', content: PROMPT_EXTRACCION },
     {
       role: 'user',
       content: contenidoUsuario(String(texto ?? ''), { ahoraLocal, zonaHoraria, contexto }),
@@ -203,19 +221,22 @@ export async function extraerDatos(texto, { cliente, ahoraLocal, zonaHoraria, co
   for (let intento = 1; intento <= 2; intento += 1) {
     let respuesta;
     try {
-      respuesta = await api.messages.create({ ...peticionBase, messages: mensajes });
+      respuesta = await api.chat.completions.create({ ...peticionBase, messages: mensajes });
     } catch (error) {
       throw traducirError(error);
     }
 
-    // Un rechazo por políticas no mejora reintentando con el mismo texto.
-    if (respuesta.stop_reason === 'refusal') {
-      throw new ErrorIA('rechazo', 'Claude declinó procesar el mensaje.');
+    const eleccion = respuesta?.choices?.[0];
+    const mensaje = eleccion?.message ?? {};
+
+    // Un rechazo del modelo no mejora reintentando con el mismo texto.
+    if (mensaje.refusal) {
+      throw new ErrorIA('rechazo', 'El modelo declinó procesar el mensaje.');
     }
 
-    const anterior = textoDeRespuesta(respuesta);
+    const anterior = typeof mensaje.content === 'string' ? mensaje.content : '';
     const resultado = leerJson(anterior);
-    if (respuesta.stop_reason !== 'max_tokens' && resultado.success) {
+    if (eleccion?.finish_reason !== 'length' && resultado.success) {
       return resultado.data;
     }
 
@@ -226,5 +247,5 @@ export async function extraerDatos(texto, { cliente, ahoraLocal, zonaHoraria, co
     }
   }
 
-  throw new ErrorIA('formato', 'La respuesta de Claude no cumplió el esquema tras reintentar.');
+  throw new ErrorIA('formato', 'La respuesta del modelo no cumplió el esquema tras reintentar.');
 }
