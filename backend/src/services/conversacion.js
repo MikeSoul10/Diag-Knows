@@ -239,6 +239,7 @@ export function crearAlmacenMemoria() {
  * @param {() => string} [dependencias.generarToken] Token corto para los botones.
  * @param {(contexto: string, error: Error) => void} [dependencias.registrarError] Log sin datos del paciente.
  * @param {string} [dependencias.zonaHorariaPorDefecto] Si el paciente no tiene zona propia.
+ * @param {(medicion: object) => boolean} [dependencias.evaluarCritica] Umbral crítico inyectable (pruebas).
  */
 export function crearServicioConversacion({
   repos,
@@ -253,6 +254,7 @@ export function crearServicioConversacion({
     console.error(`[conversacion] Falló ${contexto}: ${error?.name ?? 'Error'}`);
   },
   zonaHorariaPorDefecto = ZONA_HORARIA_RESPALDO,
+  evaluarCritica = esCritica,
 } = {}) {
   if (!repos) throw new Error('crearServicioConversacion necesita repos');
   if (!extractor?.extraer) throw new Error('crearServicioConversacion necesita extractor.extraer');
@@ -565,16 +567,28 @@ export function crearServicioConversacion({
     const origen = mensajeId ? { mensajeId } : {};
 
     for (const medicion of borrador.mediciones) {
-      await repos.mediciones.guardarMedicion({
+      const critica = evaluarCritica(medicion);
+      const guardada = await repos.mediciones.guardarMedicion({
         pacienteId,
         tipo: medicion.tipo,
         valor: medicion.valor,
         valor2: medicion.valor2 ?? null,
         unidad: medicion.unidad,
         medidaEn: medicion.ocurridoEn ?? cuando,
-        esCritica: esCritica(medicion),
+        esCritica: critica,
         ...origen,
       });
+
+      // Con los umbrales en `null` esto nunca ocurre. El repositorio de alertas
+      // participa de la misma transacción que la medición.
+      if (critica && repos.alertas?.crear) {
+        await repos.alertas.crear({
+          pacienteId,
+          medicionId: guardada?.id ?? null,
+          tipo: 'UMBRAL_CRITICO',
+          severidad: 'ALTA',
+        });
+      }
     }
 
     for (const sintoma of borrador.sintomas) {

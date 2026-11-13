@@ -13,6 +13,8 @@
  *   sintoma       -> { id, pacienteId, descripcion, nivelGravedad, reportadoEn, mensajeId }
  *   toma          -> { id, pacienteId, medicamentoId, nombreReportado, estado, tomadaEn, mensajeId }
  *   mensaje       -> { id, pacienteId, texto?, recibidoEn, expiraEn }  (trazabilidad, 006)
+ *   resumen       -> { id, pacienteId, semanaInicio, porcentajeAdherencia, texto, enviadoEn }  (DK-302)
+ *   alerta        -> { id, pacienteId, medicionId, tipo, severidad, enviadaEn, atendida }  (DK-302)
  *
  * La elección mock/PostgreSQL se hace EN CADA LLAMADA con `usarRepositoriosMock()`
  * (USE_MOCK_REPOS, o mock si no hay DATABASE_URL). Así no importa el orden en
@@ -32,6 +34,8 @@ import * as dosisLogsMock from './mocks/dosisLogs.mock.js';
 import * as saludMock from './mocks/salud.mock.js';
 import * as mensajesMock from './mocks/mensajes.mock.js';
 import * as horariosMock from './mocks/horarios.mock.js';
+import * as resumenesMock from './mocks/resumenes.mock.js';
+import * as alertasMock from './mocks/alertas.mock.js';
 
 import * as patientsReal from './patients.repo.js';
 import * as consentimientoReal from './consentimiento.repo.js';
@@ -43,6 +47,8 @@ import * as dosisLogsReal from './dosisLogs.repo.js';
 import * as saludReal from './salud.repo.js';
 import * as mensajesReal from './mensajes.repo.js';
 import * as horariosReal from './horarios.repo.js';
+import * as resumenesReal from './resumenes.repo.js';
+import * as alertasReal from './alertas.repo.js';
 
 /**
  * Fachada que delega cada función al mock o al repo real según el modo vigente.
@@ -79,6 +85,8 @@ export const dosisLogs = elegir(dosisLogsMock, dosisLogsReal);
 export const salud = elegir(saludMock, saludReal);
 export const mensajes = elegir(mensajesMock, mensajesReal);
 export const horarios = elegir(horariosMock, horariosReal);
+export const resumenes = elegir(resumenesMock, resumenesReal);
+export const alertas = elegir(alertasMock, alertasReal);
 
 /**
  * Ejecuta `fn()` de forma atómica: en PostgreSQL, todas las llamadas a los
@@ -111,6 +119,8 @@ export function eliminarPaciente(pacienteId) {
         medicamentosMock,
         dosisLogsMock,
         mensajesMock,
+        resumenesMock,
+        alertasMock,
       ]) {
         await mock.eliminarPorPaciente(pacienteId);
       }
@@ -130,4 +140,6 @@ export function reiniciarRepositorios() {
   dosisLogs.__reset();
   mensajes.__reset();
   horarios.__reset();
+  resumenes.__reset();
+  alertas.__reset();
 }

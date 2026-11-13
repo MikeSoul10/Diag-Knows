@@ -102,8 +102,18 @@ Por decisión del equipo, la extracción con IA usa la API de **Groq** (`groq-sd
 - **Ventana de 10 minutos.** Si el bot estuvo caído menos de 10 minutos, el recordatorio todavía sale. Si fue más tiempo, no se manda tarde y esa toma termina como `OMITIDA`.
 - **OMITIDA a las 2 horas.** Cada 15 minutos se marca `OMITIDA` toda dosis `PENDIENTE` con más de 2 h. Si el paciente contesta después, se corrige a `TOMADA` o `SALTADA`.
 - **Sin consejos.** «No la tomé» solo anota y remite al médico; nunca sugiere tomarla tarde ni doblar la dosis.
-- **Fuera de esta entrega:** el resumen semanal y las alertas (dependen de los umbrales clínicos, que siguen en `null`), y desactivar o editar un horario desde el bot.
+- **Resumen semanal.** El cron corre cada hora y `services/resumenes.js` decide en la zona del paciente: domingo a las 20:00 se envía el resumen de la semana en curso (lunes 00:00 → domingo 20:00 local). Se guarda cifrado en `resumenes_semanales` y el `UNIQUE (paciente_id, semana_inicio)` evita duplicados. Si no hubo tomas esperadas, no se envía nada.
+- **Fuera de esta entrega:** el envío proactivo de alertas y las alertas por `DOSIS_OMITIDA` (ver D20), y desactivar o editar un horario desde el bot.
+- **Sin administradores todavía.** `ADMIN_TELEGRAM_IDS` **no se aplica** en esta entrega y `medicamentos.creado_por` queda en `NULL`: el alta siempre es del propio paciente. Es un riesgo aceptado del piloto: cualquier paciente puede declarar sus medicamentos, pero **nada se guarda sin su confirmación** y los recordatorios solo salen con consentimiento vigente. Para habilitar el flujo de administrador haría falta validar `ADMIN_TELEGRAM_IDS` (o la tabla `administradores`), autorizar el alta desde un chat administrador y registrar quién la creó en `creado_por`; no se implementa en esta entrega.
 - No hizo falta migración: el esquema ya tenía `horarios_medicamento`, el estado `PENDIENTE` y el índice único (004).
+
+## D20 · Alertas por umbral crítico (DK-302)
+
+- **Tabla, repo y hook listos.** `alertas.repo.js` (alta, consulta y marcar atendida) y el hook de `conversacion.js` quedan implementados: al confirmar una medición, si `esCritica()` la marca como crítica se crea la alerta `UMBRAL_CRITICO`/`ALTA` dentro de la misma transacción.
+- **Nada se dispara en producción.** `src/config/thresholds.js` sigue con todos los umbrales en `null`, así que `evaluarMedicion()` y `registrarSiCorresponde()` devuelven `null` y no se inserta ninguna alerta. La lógica se prueba inyectando umbrales desde `test/alertas.test.js`.
+- **Para activarlas** hace falta la validación clínica de D16: registrar quién firma los umbrales en `VALIDACION_CLINICA` y reemplazar los `null` correspondientes.
+- **Fuera de esta entrega:** la alerta por `DOSIS_OMITIDA` (requiere que `marcarOmitidas` devuelva los ids, hoy devuelve solo el conteo) y el envío proactivo de la alerta al paciente. La tabla y el repositorio quedan listos para cuando se decida.
+- No hizo falta migración: `alertas` ya existe en la 002 con sus `CHECK` de tipo y severidad.
 
 ## D19 · Registro técnico mínimo antes del consentimiento (hallazgo #12)
 

@@ -74,6 +74,12 @@ export async function findById(id) {
   return comoDTO(rows[0]);
 }
 
+/** Todos los pacientes (uso interno de los resúmenes semanales). */
+export async function listar() {
+  const { rows } = await query(`${SELECT_PACIENTE} ORDER BY p.creado_en, p.id`);
+  return rows.map(comoDTO);
+}
+
 export async function updatePerfil(id, { alias, anioNacimiento } = {}) {
   if (!idValido(id)) return null;
 
