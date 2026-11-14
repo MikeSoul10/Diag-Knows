@@ -80,6 +80,11 @@ export async function findById(id) {
   return fila ? comoDTO(fila) : null;
 }
 
+/** Todos los pacientes (uso interno de los resúmenes semanales). */
+export async function listar() {
+  return Promise.all([...porId.values()].map((fila) => comoDTO(fila)));
+}
+
 export async function updatePerfil(id, { alias, anioNacimiento } = {}) {
   const fila = porId.get(String(id ?? ''));
   if (!fila) return null;

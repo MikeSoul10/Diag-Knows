@@ -14,11 +14,15 @@ import {
   puertoHttp,
   usarIAMock,
   usarRepositoriosMock,
+  validarEntorno,
+  zonaHorariaPorDefecto,
 } from './src/config/env.js';
 import { crearBot, publicarComandos } from './src/channel/bot.js';
 import { crearAppHttp, RUTA_WEBHOOK } from './src/channel/http.js';
+import { EXTRA_HTML } from './src/channel/format.js';
 import { estadoSalud } from './src/services/salud.service.js';
 import { iniciarDepuracionPeriodica } from './src/services/retencion.service.js';
+import { crearServicioResumenes } from './src/services/resumenes.js';
 import { iniciarScheduler } from './src/jobs/scheduler.js';
 import {
   crearEnviadorRecordatorios,
@@ -27,6 +31,13 @@ import {
 import { cerrarPool } from './src/db/pool.js';
 
 cargarEntorno();
+
+try {
+  validarEntorno();
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 const modo = modoTelegram();
 if (!['polling', 'webhook'].includes(modo)) {
@@ -70,12 +81,17 @@ await publicarComandos(bot);
 // Borra los mensajes originales con retención vencida (al arrancar y cada 24 h).
 const detenerDepuracion = iniciarDepuracionPeriodica();
 
-// Recordatorios de medicamento (DK-302): cada minuto, y OMITIDA cada 15 min.
+// Recordatorios de medicamento y resumen semanal (DK-302).
+const servicioResumenes = crearServicioResumenes({
+  zonaHorariaPorDefecto: zonaHorariaPorDefecto(),
+});
 const detenerScheduler = iniciarScheduler({
   servicio: servicioRecordatorios,
   enviar: crearEnviadorRecordatorios(bot),
+  resumenes: servicioResumenes,
+  enviarResumen: (aviso) => bot.telegram.sendMessage(aviso.chatId, aviso.texto, EXTRA_HTML),
 });
-console.log('Recordatorios de medicamento activos.');
+console.log('Recordatorios de medicamento y resumen semanal activos.');
 
 if (modo === 'polling') {
   // launch() no resuelve mientras el bot esté corriendo: no se espera.

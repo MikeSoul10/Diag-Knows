@@ -47,17 +47,19 @@ Las columnas del esquema son `TIMESTAMP` sin zona. La conexión fija `timezone=U
 
 ## D9 · Rol de aplicación
 
-`src/db/roles.sql` crea `diag_app`: solo `SELECT/INSERT/UPDATE/DELETE` sobre filas, sin `CREATE`/`DROP`; no puede editar ni borrar la bitácora de consentimiento ni el catálogo de enfermedades. Las migraciones las corre el dueño del esquema.
+`src/db/roles.sql` crea `diag_app`: solo `SELECT/INSERT/UPDATE/DELETE` sobre filas, sin `CREATE`/`DROP`; no tiene `UPDATE` ni `DELETE` directo sobre `registros_consentimiento` ni sobre el catálogo de enfermedades. La bitácora de consentimiento **sí desaparece** cuando se borra al paciente, por el `ON DELETE CASCADE` de D11: el rol no borra la fila, pero la cascada se ejecuta con los privilegios del dueño del esquema. Las migraciones las corre el dueño del esquema.
 
 ## D10 · `/health` siempre activo
 
-Express arranca también en modo polling, para que `curl http://localhost:3000/health` funcione en local. Responde `200 {"status":"ok","db":"ok"}` (`"mock"` en modo memoria) o `503 {"status":"error","db":"error"}`, sin detalles internos. El webhook valida `X-Telegram-Bot-Api-Secret-Token` en tiempo constante y exige `WEBHOOK_SECRET` de 32+ caracteres y `WEBHOOK_DOMAIN` con HTTPS.
+Express arranca también en modo polling, para que `curl http://localhost:3000/health` funcione en local. Responde `200 {"status":"ok"}` o `503 {"status":"error"}`, sin detalles internos: no revela si el adaptador es mock o PostgreSQL, ni mensajes de error, versiones o cadenas de conexión. El webhook valida `X-Telegram-Bot-Api-Secret-Token` en tiempo constante y exige `WEBHOOK_SECRET` de 32+ caracteres y `WEBHOOK_DOMAIN` con HTTPS.
 
 ## D11 · `/borrar_datos` borra al paciente y todo lo suyo (incluido el consentimiento)
 
 `/borrar_datos` pide una confirmación con botones (token de un solo uso, vigente 5 minutos) y, al confirmar, borra la fila de `pacientes`. Por `ON DELETE CASCADE` se van también consentimientos, medicamentos, horarios, tomas, mediciones, síntomas, enfermedades, alertas, resúmenes y citas; además se descartan el alta y el reporte que estuvieran a medias. Quien vuelva a escribir `/start` empieza de cero.
 
-Esto resuelve en el código el hallazgo 2 con la opción "derecho al olvido": `diag_app` no puede borrar la bitácora de consentimiento con un `DELETE` directo, pero sí desaparece al borrar al paciente. Verificado contra PostgreSQL 16 con el rol `diag_app` (el `DELETE` directo da `permission denied`; el `DELETE FROM pacientes` deja 0 filas en `registros_consentimiento`). **Pendiente de que el equipo o el PO lo confirmen:** si se prefiere conservar una constancia anónima del consentimiento, habría que anonimizar al paciente en lugar de borrarlo.
+Esto resuelve en el código el hallazgo 2 con la opción "derecho al olvido": `diag_app` no puede borrar la bitácora de consentimiento con un `DELETE` directo, pero sí desaparece al borrar al paciente. Verificado contra PostgreSQL 16 con el rol `diag_app` (el `DELETE` directo da `permission denied`; el `DELETE FROM pacientes` deja 0 filas en `registros_consentimiento`).
+
+**Decisión del 12 nov 2026:** el PO confirma el derecho al olvido con cascada. No se conserva una constancia anónima del consentimiento; si la persona vuelve, acepta el aviso de nuevo. D9 queda alineada con esta decisión.
 
 El borrado es en una sola sentencia (todo o nada). No se registran datos del paciente en logs.
 
@@ -100,5 +102,25 @@ Por decisión del equipo, la extracción con IA usa la API de **Groq** (`groq-sd
 - **Ventana de 10 minutos.** Si el bot estuvo caído menos de 10 minutos, el recordatorio todavía sale. Si fue más tiempo, no se manda tarde y esa toma termina como `OMITIDA`.
 - **OMITIDA a las 2 horas.** Cada 15 minutos se marca `OMITIDA` toda dosis `PENDIENTE` con más de 2 h. Si el paciente contesta después, se corrige a `TOMADA` o `SALTADA`.
 - **Sin consejos.** «No la tomé» solo anota y remite al médico; nunca sugiere tomarla tarde ni doblar la dosis.
-- **Fuera de esta entrega:** el resumen semanal y las alertas (dependen de los umbrales clínicos, que siguen en `null`), y desactivar o editar un horario desde el bot.
+- **Resumen semanal.** El cron corre cada hora y `services/resumenes.js` decide en la zona del paciente: domingo a las 20:00 se envía el resumen de la semana en curso (lunes 00:00 → domingo 20:00 local). Se guarda cifrado en `resumenes_semanales` y el `UNIQUE (paciente_id, semana_inicio)` evita duplicados. Si no hubo tomas esperadas, no se envía nada.
+- **Fuera de esta entrega:** el envío proactivo de alertas y las alertas por `DOSIS_OMITIDA` (ver D20), y desactivar o editar un horario desde el bot.
+- **Sin administradores todavía.** `ADMIN_TELEGRAM_IDS` **no se aplica** en esta entrega y `medicamentos.creado_por` queda en `NULL`: el alta siempre es del propio paciente. Es un riesgo aceptado del piloto: cualquier paciente puede declarar sus medicamentos, pero **nada se guarda sin su confirmación** y los recordatorios solo salen con consentimiento vigente. Para habilitar el flujo de administrador haría falta validar `ADMIN_TELEGRAM_IDS` (o la tabla `administradores`), autorizar el alta desde un chat administrador y registrar quién la creó en `creado_por`; no se implementa en esta entrega.
 - No hizo falta migración: el esquema ya tenía `horarios_medicamento`, el estado `PENDIENTE` y el índice único (004).
+
+## D20 · Alertas por umbral crítico (DK-302)
+
+- **Tabla, repo y hook listos.** `alertas.repo.js` (alta, consulta y marcar atendida) y el hook de `conversacion.js` quedan implementados: al confirmar una medición, si `esCritica()` la marca como crítica se crea la alerta `UMBRAL_CRITICO`/`ALTA` dentro de la misma transacción.
+- **Nada se dispara en producción.** `src/config/thresholds.js` sigue con todos los umbrales en `null`, así que `evaluarMedicion()` y `registrarSiCorresponde()` devuelven `null` y no se inserta ninguna alerta. La lógica se prueba inyectando umbrales desde `test/alertas.test.js`.
+- **Para activarlas** hace falta la validación clínica de D16: registrar quién firma los umbrales en `VALIDACION_CLINICA` y reemplazar los `null` correspondientes.
+- **Fuera de esta entrega:** la alerta por `DOSIS_OMITIDA` (requiere que `marcarOmitidas` devuelva los ids, hoy devuelve solo el conteo) y el envío proactivo de la alerta al paciente. La tabla y el repositorio quedan listos para cuando se decida.
+- No hizo falta migración: `alertas` ya existe en la 002 con sus `CHECK` de tipo y severidad.
+
+## D19 · Registro técnico mínimo antes del consentimiento (hallazgo #12)
+
+- **Qué se crea.** Al llegar `/start`, `registration.iniciar()` → `patients.findOrCreate()` inserta la fila de `pacientes` con solo `telegram_chat_id` (más `id`, `estado = ACTIVO` y `creado_en` por defecto). Esa fila existe aunque la persona todavía no haya aceptado el aviso.
+- **Para qué.** Mantener el estado de la conversación y no volver a pedir el aviso en cada `/start`. No se usa para perfil ni para datos clínicos.
+- **Qué NO se guarda.** Antes del consentimiento no se guarda alias, año de nacimiento, enfermedad, medicamentos, mediciones, síntomas ni el texto de los mensajes. El perfil se escribe solo al confirmar el registro y el resto de operaciones exigen consentimiento vigente. Si la persona toca «No acepto», se registra `aceptado = false` y no sigue nada más.
+- **Cómo se borra.** `/borrar_datos` elimina al paciente y la cascada se lleva esa fila y el consentimiento (D11); no queda constancia anónima.
+- **Transparencia.** El aviso de privacidad lo dice y el detalle técnico está en `docs/ia-y-seguridad.md`, sección «Consentimiento y registro técnico mínimo».
+
+

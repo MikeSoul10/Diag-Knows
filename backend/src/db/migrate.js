@@ -2,7 +2,8 @@
  * Aplica el esquema base y las migraciones pendientes (DK-103).
  *
  *   npm run db:migrate          → schema.sql (si no existe `pacientes`) + migrations/*.sql
- *   npm run db:seed             → lo anterior + seed.sql (datos ficticios; bloqueado en producción)
+ *   npm run db:seed             → lo anterior + seed.sql (datos ficticios; exige
+ *                                 NODE_ENV != production y ALLOW_SEED=true)
  *
  * Cada migración corre en su propia transacción y queda anotada en
  * `schema_migraciones`, así que correrlo dos veces no repite nada.
@@ -66,10 +67,35 @@ export async function migrar({ log = console.log } = {}) {
   return nuevas;
 }
 
-export async function sembrar({ log = console.log } = {}) {
-  if (process.env.NODE_ENV === 'production') {
+/**
+ * Guard puro de `seed.sql` (sin BD, fácil de probar).
+ *
+ * Se niega en producción y exige `ALLOW_SEED=true` en cualquier entorno: los
+ * datos ficticios no deben llegar a una BD real por un `npm run db:seed`
+ * accidental.
+ */
+export function puedeSembrar(entorno = process.env.NODE_ENV, bandera = process.env.ALLOW_SEED) {
+  if (entorno === 'production') {
     throw new Error('seed.sql tiene datos ficticios: no se ejecuta con NODE_ENV=production.');
   }
+  if (
+    String(bandera ?? '')
+      .trim()
+      .toLowerCase() !== 'true'
+  ) {
+    throw new Error(
+      'Para aplicar seed.sql define ALLOW_SEED=true (por ejemplo: ' +
+        'PowerShell: $env:ALLOW_SEED="true"; npm run db:seed). Solo para desarrollo.'
+    );
+  }
+}
+
+export async function sembrar({
+  log = console.log,
+  entorno = process.env.NODE_ENV,
+  permitir = process.env.ALLOW_SEED,
+} = {}) {
+  puedeSembrar(entorno, permitir);
   log('Aplicando seed.sql');
   await ejecutarArchivo(join(DIR, 'seed.sql'));
 }
